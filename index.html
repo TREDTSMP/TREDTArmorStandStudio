@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Armor Stand Studio</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { height: 100%; margin: 0; background: #0b0f14; color: #e5e7eb;
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  body { visibility: hidden; }            /* shown once libraries have loaded */
+  body.ready { visibility: visible; }
+  #viewport canvas { display: block; outline: none; touch-action: none; }
+  input[type=range] { accent-color: #34d399; }
+  .cmd .k { color: #7dd3fc; } .cmd .n { color: #fbbf24; } .cmd .s { color: #94a3b8; }
+  ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="h-full flex flex-col lg:flex-row">
+
+  <!-- 3D viewport -->
+  <main class="relative flex-1 min-h-[340px]">
+    <div id="viewport" class="absolute inset-0"></div>
+    <div class="absolute top-3 left-3 pointer-events-none select-none">
+      <div class="text-sm font-semibold tracking-wide text-slate-100">Armor Stand Studio</div>
+      <div id="selBadge" class="mt-1 inline-block rounded-md bg-slate-900/80 px-2 py-1 text-xs text-amber-300 border border-amber-400/30"></div>
+    </div>
+    <button id="resetView" class="absolute top-3 right-3 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Reset view</button>
+    <div class="absolute bottom-3 left-3 right-3 text-[11px] leading-relaxed text-slate-400 pointer-events-none select-none">
+      Drag a body part to rotate it &middot; <b>Shift</b>+drag = roll &middot; drag the background or use right-drag to orbit &middot; scroll to zoom
+    </div>
+    <div id="loadErr" class="hidden absolute inset-0 place-items-center p-8 text-center text-slate-300"></div>
+  </main>
+
+  <!-- Control panel -->
+  <aside class="w-full lg:w-[420px] lg:h-full overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-950/70 p-4 space-y-4">
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-3">
+      <h2 class="px-2 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Attributes</h2>
+      <div id="options" class="space-y-0.5"></div>
+      <div class="mt-2 flex items-center gap-3 px-3 py-2">
+        <span class="w-24 text-sm font-medium text-slate-100">Facing<br><code class="text-[11px] font-normal text-slate-400">Rotation:[yaw]</code></span>
+        <input id="facing" type="range" min="-180" max="180" step="1" class="flex-1">
+        <input id="facingNum" type="number" min="-180" max="180" step="1" class="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-sm">
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <h2 class="pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Body part</h2>
+      <div id="partBtns" class="grid grid-cols-3 gap-2"></div>
+      <div id="rot" class="mt-4 space-y-3"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="resetPart" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Reset this part</button>
+        <button id="resetAll" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Reset all poses</button>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div class="flex items-baseline justify-between pb-2">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Java /summon command</h2>
+        <span id="cmdLen" class="text-[11px] text-slate-500"></span>
+      </div>
+      <pre id="cmd" class="cmd select-all whitespace-pre-wrap break-all rounded-lg border border-slate-800 bg-slate-950 p-3 text-[13px] leading-relaxed font-mono"></pre>
+      <p id="cmdWarn" class="mt-2 hidden text-[11px] text-amber-300">Long command: it may not fit in the chat box. Use a command block or a function file instead.</p>
+      <label class="mt-3 flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+        <input id="fullPose" type="checkbox" class="accent-emerald-500"> Include every pose value (not only the ones you changed)
+      </label>
+      <button id="copyBtn" class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 active:scale-[.99]">
+        <span id="copyIcon">&#128203;</span><span id="copyText">Copy command to clipboard</span>
+      </button>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <h2 class="pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Presets</h2>
+      <div id="builtins" class="flex flex-wrap gap-2"></div>
+      <div class="mt-4 text-[11px] uppercase tracking-wider text-slate-500">My presets</div>
+      <div id="myPresets" class="mt-2 space-y-1"></div>
+      <div class="mt-3 flex gap-2">
+        <input id="presetName" type="text" maxlength="60" placeholder="Preset name" class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm placeholder:text-slate-600">
+        <button id="savePreset" class="rounded-md bg-slate-700 px-3 py-1.5 text-sm hover:bg-slate-600">Save</button>
+      </div>
+      <div class="mt-2 flex gap-2">
+        <button id="exportBtn" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Export to file&hellip;</button>
+        <button id="importBtn" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Import from file&hellip;</button>
+        <input id="importFile" type="file" accept="application/json,.json" class="hidden">
+      </div>
+    </section>
+  </aside>
+</div>
+
+<div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 opacity-0 shadow-lg transition-opacity"></div>
+
+<script>
+(function () {
+'use strict';
+
+/* ---------------------------------------------------------------------------
+ * Library loading: local vendor/ copy first (offline exe), CDN as fallback.
+ * ------------------------------------------------------------------------- */
+function loadScript(urls) {
+  return new Promise(function (resolve, reject) {
+    var i = 0;
+    (function next() {
+      if (i >= urls.length) return reject(new Error('Could not load ' + urls[urls.length - 1]));
+      var s = document.createElement('script');
+      s.src = urls[i++];
+      s.onload = resolve;
+      s.onerror = function () { s.remove(); next(); };
+      document.head.appendChild(s);
+    })();
+  });
+}
+var THREE_URLS = ['vendor/three.min.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'];
+var ORBIT_URLS = ['vendor/OrbitControls.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'];
+var TAILWIND_URLS = ['vendor/tailwind.js', 'https://cdn.tailwindcss.com/3.4.1'];
+
+Promise.all([
+  loadScript(THREE_URLS).then(function () { return loadScript(ORBIT_URLS); }),
+  loadScript(TAILWIND_URLS).catch(function () { return null; })   // UI still works unstyled
+]).then(start).catch(function (err) {
+  document.body.classList.add('ready');
+  var box = document.getElementById('loadErr');
+  box.classList.remove('hidden'); box.classList.add('grid');
+  box.textContent = 'The 3D engine could not be loaded (' + err.message + '). Check your internet connection and restart.';
+});
+
+function start() {
+const $ = function (s) { return document.querySelector(s); };
+const DEG = Math.PI / 180;
+
+/* ---------------------------------------------------------------------------
+ * Armor stand model (units = Minecraft "pixels", 16 px = 1 block).
+ * Boxes are [x0,y0,z0, x1,y1,z1] relative to the part's pivot. World axes:
+ * +X east, +Y up, +Z south (the stand faces +Z).
+ * Dimensions follow the vanilla armor stand model.
+ * ------------------------------------------------------------------------- */
+const PARTS = [
+  { key: 'Head', label: 'Head', pivot: [0, 23, 0], def: [0, 0, 0], boxes: [[-1, 0, -1, 1, 7, 1]] },
+  { key: 'Body', label: 'Body', pivot: [0, 24, 0], def: [0, 0, 0], boxes: [
+      [-6, -3, -1.5, 6, 0, 1.5],   // shoulder bar
+      [-3, -10, -1, -1, -3, 1],    // right rib stick
+      [1, -10, -1, 3, -3, 1],      // left rib stick
+      [-4, -12, -1, 4, -10, 1] ] },// hip bar
+  { key: 'RightArm', label: 'Right arm', arm: true, pivot: [-5, 22, 0], def: [-15, 0, 10], boxes: [[-2, -10, -1, 0, 2, 1]] },
+  { key: 'LeftArm',  label: 'Left arm',  arm: true, pivot: [5, 22, 0],  def: [-10, 0, -10], boxes: [[0, -10, -1, 2, 2, 1]] },
+  { key: 'RightLeg', label: 'Right leg', pivot: [-1.9, 12, 0], def: [1, 0, 1],   boxes: [[-1, -11, -1, 1, 0, 1]] },
+  { key: 'LeftLeg',  label: 'Left leg',  pivot: [1.9, 12, 0],  def: [-1, 0, -1], boxes: [[-1, -11, -1, 1, 0, 1]] }
+];
+const BASEPLATE = [-6, 0, -6, 6, 1, 6];
+const PART_BY_KEY = {}; PARTS.forEach(function (p) { PART_BY_KEY[p.key] = p; });
+const CMD_ORDER = ['Head', 'Body', 'LeftArm', 'RightArm', 'LeftLeg', 'RightLeg'];
+
+const OPTIONS = [
+  { id: 'showArms',  label: 'Show arms',  tag: 'ShowArms:1b' },
+  { id: 'baseplate', label: 'Baseplate',  tag: 'NoBasePlate:1b when hidden' },
+  { id: 'invisible', label: 'Invisible',  tag: 'Invisible:1b' },
+  { id: 'small',     label: 'Small',      tag: 'Small:1b' },
+  { id: 'noGravity', label: 'No gravity', tag: 'NoGravity:1b' }
+];
+const DEFAULT_OPTS = { showArms: true, baseplate: true, invisible: false, small: false, noGravity: false, rotation: 0 };
+
+/* ---------------------------------------------------------------------------
+ * State
+ * ------------------------------------------------------------------------- */
+const state = { opts: Object.assign({}, DEFAULT_OPTS), pose: {}, selected: 'Head', full: false };
+function resetPoses() { PARTS.forEach(function (p) { state.pose[p.key] = p.def.slice(); }); }
+resetPoses();
+
+const clamp180 = function (v) { return Math.max(-180, Math.min(180, v)); };
+const wrap180 = function (a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a === -180 ? 180 : a; };
+
+/* ---------------------------------------------------------------------------
+ * Command generation
+ * ------------------------------------------------------------------------- */
+function fnum(v) {
+  var s = String(Math.round(v * 100) / 100);
+  if (s === '-0') s = '0';
+  return s + 'f';
+}
+function buildCommand() {
+  var o = state.opts, tags = [];
+  if (o.showArms) tags.push('ShowArms:1b');
+  if (!o.baseplate) tags.push('NoBasePlate:1b');
+  if (o.invisible) tags.push('Invisible:1b');
+  if (o.small) tags.push('Small:1b');
+  if (o.noGravity) tags.push('NoGravity:1b');
+  if (Math.abs(o.rotation) > 1e-6) tags.push('Rotation:[' + fnum(o.rotation) + ']');
+  var pose = [];
+  CMD_ORDER.forEach(function (key) {
+    var p = PART_BY_KEY[key];
+    if (p.arm && !o.showArms) return;
+    var v = state.pose[key];
+    var changed = v.some(function (a, i) { return Math.abs(a - p.def[i]) > 1e-6; });
+    if (state.full || changed) pose.push(key + ':[' + fnum(v[0]) + ',' + fnum(v[1]) + ',' + fnum(v[2]) + ']');
+  });
+  if (pose.length) tags.push('Pose:{' + pose.join(',') + '}');
+  return '/summon minecraft:armor_stand ~ ~ ~' + (tags.length ? ' {' + tags.join(',') + '}' : '');
+}
+function highlight(cmd) {
+  var esc = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc
+    .replace(/^\/summon minecraft:armor_stand/, '<span class="s">/summon minecraft:armor_stand</span>')
+    .replace(/\b(ShowArms|NoBasePlate|Invisible|Small|NoGravity|Rotation|Pose|Head|Body|LeftArm|RightArm|LeftLeg|RightLeg)(?=:)/g, '<span class="k">$1</span>')
+    .replace(/(-?\d+(?:\.\d+)?[fb])(?![a-zA-Z])/g, '<span class="n">$1</span>');
+}
+
+/* ---------------------------------------------------------------------------
+ * Procedural pixel textures (so the app needs no downloaded game assets).
+ * To use your own: place tileable textures at web/textures/wood.png and
+ * web/textures/stone.png (e.g. oak_planks.png / smooth_stone.png).
+ * ------------------------------------------------------------------------- */
+function rng(seed) { return function () { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+function pixelTexture(c) {
+  var t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function makeWoodTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 16;
+  var g = c.getContext('2d'), r = rng(7);
+  var bases = [[186, 148, 92], [176, 138, 84], [192, 154, 98], [181, 143, 89]];
+  for (var y = 0; y < 16; y++) {
+    var row = Math.floor(y / 4);
+    for (var x = 0; x < 16; x++) {
+      var n = (r() - 0.5) * 18;
+      if (y % 4 === 3) n -= 22;
+      if ((x + row * 5) % 16 === 0) n -= 14;
+      var col = bases[row].map(function (v) { return Math.max(0, Math.min(255, Math.round(v + n))); });
+      g.fillStyle = 'rgb(' + col.join(',') + ')'; g.fillRect(x, y, 1, 1);
+    }
+  }
+  return pixelTexture(c);
+}
+function makeStoneTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 16;
+  var g = c.getContext('2d'), r = rng(23);
+  for (var y = 0; y < 16; y++) for (var x = 0; x < 16; x++) {
+    var v = Math.round(128 + (r() - 0.5) * 22 - (r() < 0.06 ? 24 : 0));
+    g.fillStyle = 'rgb(' + v + ',' + v + ',' + (v + 2) + ')'; g.fillRect(x, y, 1, 1);
+  }
+  return pixelTexture(c);
+}
+function makeBlobTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 64;
+  var g = c.getContext('2d'), grd = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(0,0,0,.55)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ---------------------------------------------------------------------------
+ * Three.js scene
+ * ------------------------------------------------------------------------- */
+const viewportEl = $('#viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+viewportEl.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1420);
+const camera = new THREE.PerspectiveCamera(35, 1, 1, 2000);
+const CAM_START = new THREE.Vector3(55, 42, 88), CAM_TARGET = new THREE.Vector3(0, 16, 0);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.enablePan = false; controls.minDistance = 35; controls.maxDistance = 260;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+function resetView() { camera.position.copy(CAM_START); controls.target.copy(CAM_TARGET); controls.update(); }
+resetView();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.85));
+var sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(40, 90, 60); scene.add(sun);
+
+var grid = new THREE.GridHelper(160, 20, 0x2b3a52, 0x1a2436); grid.position.y = -0.02; scene.add(grid);
+var blob = new THREE.Mesh(new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshBasicMaterial({ map: makeBlobTexture(), transparent: true, depthWrite: false }));
+blob.rotation.x = -Math.PI / 2; blob.position.y = 0.03; scene.add(blob);
+
+var woodTex = makeWoodTexture(), stoneTex = makeStoneTexture();
+var allMats = [];                       // every stand material (for ghost mode)
+function newMat(tex) {
+  var m = new THREE.MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  allMats.push(m); return m;
+}
+// Optional user-supplied textures override the procedural ones.
+function tryTexture(url, apply) {
+  new THREE.TextureLoader().load(url, function (t) {
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; apply(t);
+  }, undefined, function () { /* no custom texture: keep procedural */ });
+}
+
+function makeBox(b, mat) {
+  var w = b[3] - b[0], h = b[4] - b[1], d = b[5] - b[2];
+  var geo = new THREE.BoxGeometry(w, h, d);
+  geo.translate((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2);
+  // Scale UVs so one texture tile = 16 px (keeps pixels square on thin sticks).
+  var uv = geo.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (var f = 0; f < 6; f++) for (var v = 0; v < 4; v++) {
+    var i = f * 4 + v;
+    uv.setXY(i, uv.getX(i) * dims[f][0] / 16, uv.getY(i) * dims[f][1] / 16);
+  }
+  uv.needsUpdate = true;
+  return new THREE.Mesh(geo, mat);
+}
+
+const root = new THREE.Group(); scene.add(root);     // vertical offset (no-gravity float)
+const stand = new THREE.Group(); root.add(stand);    // scale (small) + facing
+const partObjs = {};
+var woodMats = [];
+
+PARTS.forEach(function (p) {
+  var g = new THREE.Group();
+  g.position.set(p.pivot[0], p.pivot[1], p.pivot[2]);
+  g.rotation.order = 'ZYX';              // Minecraft applies Z, then Y, then X
+  var mat = newMat(woodTex); woodMats.push(mat);
+  var edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 });
+  var meshes = p.boxes.map(function (b) {
+    var m = makeBox(b, mat);
+    m.userData.part = p.key;
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), edgeMat));
+    g.add(m); return m;
+  });
+  stand.add(g);
+  partObjs[p.key] = { group: g, meshes: meshes, mat: mat, edgeMat: edgeMat };
+});
+
+var baseMat = newMat(stoneTex);
+var baseGroup = new THREE.Group();
+var baseMesh = makeBox(BASEPLATE, baseMat);
+baseMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(baseMesh.geometry),
+  new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 })));
+baseGroup.add(baseMesh); stand.add(baseGroup);
+
+tryTexture('textures/wood.png', function (t) { woodMats.forEach(function (m) { m.map = t; m.needsUpdate = true; }); });
+tryTexture('textures/stone.png', function (t) { baseMat.map = t; baseMat.needsUpdate = true; });
+
+var axes = new THREE.AxesHelper(10);     // gizmo on the selected part
+axes.material.depthTest = false; axes.renderOrder = 10;
+
+/* ---- applying state to the scene ---- */
+var hovered = null;
+function refreshHighlights() {
+  PARTS.forEach(function (p) {
+    var o = partObjs[p.key], sel = p.key === state.selected, hov = p.key === hovered && !sel;
+    o.mat.emissive.setHex(sel ? 0x4a3b00 : hov ? 0x262626 : 0x000000);
+    o.edgeMat.color.setHex(sel ? 0xfacc15 : hov ? 0xffffff : 0x000000);
+    o.edgeMat.opacity = sel || hov ? 1 : 0.55;
+  });
+}
+function applyPose() {
+  PARTS.forEach(function (p) {
+    var o = partObjs[p.key], v = state.pose[p.key];
+    // Minecraft model space -> world: X keeps its sign, Y and Z are mirrored.
+    o.group.rotation.set(v[0] * DEG, -v[1] * DEG, -v[2] * DEG);
+    o.group.visible = !p.arm || state.opts.showArms;
+  });
+}
+function applyOptions() {
+  var o = state.opts;
+  baseGroup.visible = o.baseplate;
+  stand.scale.setScalar(o.small ? 0.5 : 1);
+  stand.rotation.y = -o.rotation * DEG;                 // +yaw = clockwise from above
+  blob.scale.setScalar(o.small ? 0.5 : 1); blob.visible = !o.invisible;
+  allMats.forEach(function (m) {                        // invisible = ghost preview
+    m.transparent = o.invisible; m.opacity = o.invisible ? 0.3 : 1; m.depthWrite = !o.invisible; m.needsUpdate = true;
+  });
+}
+
+function resize() {
+  var w = viewportEl.clientWidth, h = viewportEl.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewportEl); resize();
+
+(function tick(t) {
+  controls.update();
+  root.position.y = state.opts.noGravity ? 12 + Math.sin(t / 600) * 0.8 : 0;   // float preview
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+})(0);
+
+/* ---------------------------------------------------------------------------
+ * Picking & mouse posing
+ * ------------------------------------------------------------------------- */
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(e) {
+  var r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  var objs = [];
+  PARTS.forEach(function (p) { var o = partObjs[p.key]; if (o.group.visible) objs = objs.concat(o.meshes); });
+  var hit = raycaster.intersectObjects(objs, false)[0];
+  return hit ? hit.object.userData.part : null;
+}
+var drag = null;
+// Capture phase: runs before OrbitControls so we can take over the gesture.
+viewportEl.addEventListener('pointerdown', function (e) {
+  if (e.button !== 0) return;
+  var k = pick(e);
+  if (!k) return;                                       // background -> orbit
+  select(k);
+  drag = { key: k, x: e.clientX, y: e.clientY };
+  controls.enabled = false;
+  renderer.domElement.style.cursor = 'grabbing';
+}, true);
+window.addEventListener('pointermove', function (e) {
+  if (!drag) return;
+  var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  var v = state.pose[drag.key], sgn = camera.position.z >= 0 ? 1 : -1, k = 0.6;
+  if (e.shiftKey) {
+    v[2] = wrap180(v[2] + dx * k * sgn);                               // roll
+  } else {
+    v[1] = wrap180(v[1] - dx * k * sgn);                               // yaw
+    v[0] = wrap180(v[0] + (drag.key === 'Head' ? 1 : -1) * dy * k * sgn); // pitch
+  }
+  changed();
+});
+function endDrag() { if (drag) { drag = null; controls.enabled = true; renderer.domElement.style.cursor = 'default'; } }
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+viewportEl.addEventListener('pointermove', function (e) {
+  if (drag || e.buttons) return;
+  var k = pick(e);
+  if (k !== hovered) { hovered = k; refreshHighlights(); }
+  renderer.domElement.style.cursor = k ? 'grab' : 'default';
+});
+viewportEl.addEventListener('pointerleave', function () { if (hovered) { hovered = null; refreshHighlights(); } });
+viewportEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+$('#resetView').addEventListener('click', resetView);
+
+/* ---------------------------------------------------------------------------
+ * UI construction
+ * ------------------------------------------------------------------------- */
+// Option toggles
+OPTIONS.forEach(function (o) {
+  var row = document.createElement('label');
+  row.className = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-slate-800/60';
+  row.innerHTML =
+    '<span><span class="block text-sm font-medium text-slate-100">' + o.label + '</span>' +
+    '<code class="text-[11px] text-slate-400">' + o.tag + '</code></span>' +
+    '<span class="relative inline-flex"><input type="checkbox" class="peer sr-only" data-opt="' + o.id + '">' +
+    '<span class="block h-6 w-11 rounded-full bg-slate-600 transition peer-checked:bg-emerald-500 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-300"></span>' +
+    '<span class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5"></span></span>';
+  $('#options').appendChild(row);
+  row.querySelector('input').addEventListener('change', function (e) {
+    state.opts[o.id] = e.target.checked;
+    if (o.id === 'showArms' && !e.target.checked && PART_BY_KEY[state.selected].arm) select('Head');
+    changed();
+  });
+});
+function setFacing(v) { state.opts.rotation = clamp180(v); changed(); }
+$('#facing').addEventListener('input', function (e) { setFacing(parseFloat(e.target.value)); });
+$('#facingNum').addEventListener('input', function (e) { var v = parseFloat(e.target.value); if (!isNaN(v)) setFacing(v); });
+$('#facingNum').addEventListener('change', syncUI);
+
+// Part buttons
+PARTS.forEach(function (p) {
+  var b = document.createElement('button');
+  b.dataset.key = p.key; b.textContent = p.label;
+  b.addEventListener('click', function () { select(p.key); });
+  $('#partBtns').appendChild(b);
+});
+
+// Rotation rows
+const AXES = [
+  { name: 'Pitch', axis: 'X', cls: 'text-rose-400' },
+  { name: 'Yaw',   axis: 'Y', cls: 'text-emerald-400' },
+  { name: 'Roll',  axis: 'Z', cls: 'text-sky-400' }
+];
+AXES.forEach(function (a, i) {
+  var row = document.createElement('div');
+  row.className = 'flex items-center gap-3';
+  row.innerHTML =
+    '<span class="w-16 text-sm font-medium ' + a.cls + '">' + a.name + ' <span class="text-xs opacity-70">' + a.axis + '</span></span>' +
+    '<input type="range" min="-180" max="180" step="1" class="flex-1" data-r="' + i + '">' +
+    '<input type="number" min="-180" max="180" step="0.5" class="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-sm" data-n="' + i + '">';
+  $('#rot').appendChild(row);
+  row.querySelector('[data-r]').addEventListener('input', function (e) { setAngle(i, parseFloat(e.target.value)); });
+  var num = row.querySelector('[data-n]');
+  num.addEventListener('input', function (e) { var v = parseFloat(e.target.value); if (!isNaN(v)) setAngle(i, v); });
+  num.addEventListener('change', syncUI);
+});
+function setAngle(i, v) { state.pose[state.selected][i] = clamp180(v); changed(); }
+
+$('#resetPart').addEventListener('click', function () { state.pose[state.selected] = PART_BY_KEY[state.selected].def.slice(); changed(); });
+$('#resetAll').addEventListener('click', function () { resetPoses(); changed(); });
+$('#fullPose').addEventListener('change', function (e) { state.full = e.target.checked; syncUI(); });
+
+function select(key) {
+  state.selected = key;
+  if (axes.parent) axes.parent.remove(axes);
+  partObjs[key].group.add(axes);
+  refreshHighlights(); syncUI();
+}
+function changed() { applyPose(); applyOptions(); syncUI(); }
+
+/* ---- sync state -> DOM ---- */
+function syncUI() {
+  document.querySelectorAll('[data-opt]').forEach(function (el) { el.checked = !!state.opts[el.dataset.opt]; });
+  var rot = state.opts.rotation;
+  $('#facing').value = rot;
+  if (document.activeElement !== $('#facingNum')) $('#facingNum').value = rot;
+
+  document.querySelectorAll('#partBtns button').forEach(function (b) {
+    var p = PART_BY_KEY[b.dataset.key], sel = p.key === state.selected, off = p.arm && !state.opts.showArms;
+    b.disabled = off;
+    b.className = 'rounded-md border px-2 py-2 text-sm transition ' +
+      (off ? 'cursor-not-allowed border-slate-800 text-slate-600' :
+       sel ? 'border-amber-400 bg-amber-400/15 text-amber-200' :
+             'border-slate-700 text-slate-200 hover:bg-slate-800');
+  });
+  var v = state.pose[state.selected];
+  for (var i = 0; i < 3; i++) {
+    $('[data-r="' + i + '"]').value = Math.round(v[i]);
+    var n = $('[data-n="' + i + '"]');
+    if (document.activeElement !== n) n.value = Math.round(v[i] * 10) / 10;
+  }
+  $('#selBadge').textContent = PART_BY_KEY[state.selected].label + '  [' + v.map(function (a) { return Math.round(a * 10) / 10; }).join(', ') + ']';
+
+  var cmd = buildCommand();
+  $('#cmd').innerHTML = highlight(cmd);
+  $('#cmdLen').textContent = cmd.length + ' chars';
+  $('#cmdWarn').classList.toggle('hidden', cmd.length <= 256);
+}
+
+/* ---------------------------------------------------------------------------
+ * Copy to clipboard (Python/pyperclip first, browser APIs as fallback)
+ * ------------------------------------------------------------------------- */
+const hasPy = function () { return !!(window.pywebview && window.pywebview.api && window.pywebview.api.copy_text); };
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.remove(); return ok;
+}
+var copyTimer = null;
+$('#copyBtn').addEventListener('click', async function () {
+  var text = buildCommand(), ok = false;
+  if (hasPy()) { try { var r = await window.pywebview.api.copy_text(text); ok = !!(r && r.ok); } catch (e) {} }
+  if (!ok) { try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = fallbackCopy(text); } }
+  var btn = $('#copyBtn');
+  $('#copyIcon').textContent = ok ? '✔' : '⚠';
+  $('#copyText').textContent = ok ? 'Copied!' : 'Copy failed - select the command and press Ctrl+C';
+  btn.classList.toggle('bg-emerald-300', ok);
+  clearTimeout(copyTimer);
+  copyTimer = setTimeout(function () {
+    $('#copyIcon').textContent = '📋'; $('#copyText').textContent = 'Copy command to clipboard'; btn.classList.remove('bg-emerald-300');
+  }, 1800);
+});
+
+/* ---------------------------------------------------------------------------
+ * Presets
+ * ------------------------------------------------------------------------- */
+var toastTimer = null;
+function toast(msg) {
+  var t = $('#toast'); t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.style.opacity = '0'; }, 2000);
+}
+const BUILTIN = {
+  'Default':  { opts: {}, pose: {} },
+  'Wave':     { opts: {}, pose: { RightArm: [-165, 0, 15], Head: [0, 0, 5] } },
+  'Zombie':   { opts: {}, pose: { RightArm: [-90, 0, 0], LeftArm: [-90, 0, 0] } },
+  'Walking':  { opts: {}, pose: { RightArm: [-35, 0, 5], LeftArm: [35, 0, -5], RightLeg: [30, 0, 0], LeftLeg: [-30, 0, 0] } },
+  'Sitting':  { opts: { baseplate: false }, pose: { RightLeg: [-90, 0, 0], LeftLeg: [-90, 0, 0], RightArm: [-20, 0, 5], LeftArm: [-20, 0, -5], Head: [10, 0, 0] } },
+  'Pointing': { opts: {}, pose: { RightArm: [-90, -25, 0], Head: [0, -20, 0] } }
+};
+function serialize(name) {
+  var pose = {}; PARTS.forEach(function (p) { pose[p.key] = state.pose[p.key].slice(); });
+  return { app: 'ArmorStandStudio', version: 1, name: name || '', options: Object.assign({}, state.opts), pose: pose };
+}
+function applyPreset(data) {
+  var opts = data.options || data.opts || {}, pose = data.pose || {};
+  state.opts = Object.assign({}, DEFAULT_OPTS);
+  Object.keys(DEFAULT_OPTS).forEach(function (k) {
+    if (k in opts) state.opts[k] = (k === 'rotation') ? clamp180(Number(opts[k]) || 0) : !!opts[k];
+  });
+  resetPoses();
+  PARTS.forEach(function (p) {
+    var v = pose[p.key];
+    if (Array.isArray(v) && v.length === 3 && v.every(function (n) { return isFinite(Number(n)); })) {
+      state.pose[p.key] = v.map(function (n) { return clamp180(Number(n)); });
+    }
+  });
+  if (PART_BY_KEY[state.selected].arm && !state.opts.showArms) select('Head');
+  changed();
+}
+
+// Storage: Python (config folder) when running as the desktop app, localStorage in a plain browser.
+const LS_KEY = 'armorStandStudio.presets';
+const Store = {
+  async list() {
+    if (hasPy()) { try { return await window.pywebview.api.list_presets() || {}; } catch (e) { return {}; } }
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { return {}; }
+  },
+  async save(name, data) {
+    if (hasPy()) { var r = await window.pywebview.api.save_preset(name, data); return !!(r && r.ok); }
+    try { var all = await this.list(); all[name] = data; localStorage.setItem(LS_KEY, JSON.stringify(all)); return true; } catch (e) { return false; }
+  },
+  async remove(name) {
+    if (hasPy()) { await window.pywebview.api.delete_preset(name); return; }
+    try { var all = await this.list(); delete all[name]; localStorage.setItem(LS_KEY, JSON.stringify(all)); } catch (e) {}
+  },
+  async exportFile(data, name) {
+    if (hasPy()) { var r = await window.pywebview.api.export_preset(data, name || 'armor-stand-pose'); return r && r.ok; }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    a.download = (name || 'armor-stand-pose') + '.json'; document.body.appendChild(a); a.click(); a.remove();
+    return true;
+  }
+};
+
+async function renderPresets() {
+  var list = $('#myPresets'), all = await Store.list(), names = Object.keys(all).sort();
+  list.innerHTML = '';
+  if (!names.length) {
+    var empty = document.createElement('div'); empty.className = 'text-xs text-slate-500'; empty.textContent = 'Nothing saved yet.';
+    list.appendChild(empty); return;
+  }
+  names.forEach(function (name) {
+    var row = document.createElement('div');
+    row.className = 'flex items-center gap-2 rounded-md bg-slate-950 px-2 py-1';
+    var load = document.createElement('button');
+    load.className = 'min-w-0 flex-1 truncate text-left text-sm hover:text-emerald-300'; load.textContent = name;
+    load.addEventListener('click', function () { applyPreset(all[name]); toast('Loaded "' + name + '"'); });
+    var del = document.createElement('button');
+    del.className = 'text-xs text-slate-500 hover:text-rose-400'; del.textContent = 'Delete';
+    del.addEventListener('click', async function () { await Store.remove(name); renderPresets(); });
+    row.appendChild(load); row.appendChild(del); list.appendChild(row);
+  });
+}
+Object.keys(BUILTIN).forEach(function (name) {
+  var b = document.createElement('button');
+  b.className = 'rounded-full border border-slate-700 px-3 py-1 text-xs hover:bg-slate-800'; b.textContent = name;
+  b.addEventListener('click', function () { applyPreset({ options: Object.assign({ showArms: true }, BUILTIN[name].opts), pose: BUILTIN[name].pose }); });
+  $('#builtins').appendChild(b);
+});
+$('#savePreset').addEventListener('click', async function () {
+  var name = $('#presetName').value.trim();
+  if (!name) { $('#presetName').focus(); return; }
+  var ok = await Store.save(name, serialize(name));
+  toast(ok ? 'Saved "' + name + '"' : 'Could not save preset'); if (ok) { $('#presetName').value = ''; renderPresets(); }
+});
+$('#exportBtn').addEventListener('click', async function () {
+  var name = $('#presetName').value.trim() || 'armor-stand-pose';
+  var ok = await Store.exportFile(serialize(name), name); if (ok) toast('Exported');
+});
+$('#importBtn').addEventListener('click', async function () {
+  if (hasPy()) {
+    var r = await window.pywebview.api.import_preset();
+    if (r && r.ok) { applyPreset(r.data); toast('Imported'); }
+    else if (r && r.error) toast('Import failed: ' + r.error);
+  } else { $('#importFile').click(); }
+});
+$('#importFile').addEventListener('change', function (e) {
+  var f = e.target.files[0]; if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () { try { applyPreset(JSON.parse(rd.result)); toast('Imported'); } catch (err) { toast('Not a valid preset file'); } };
+  rd.readAsText(f); e.target.value = '';
+});
+
+/* ---------------------------------------------------------------------------
+ * Boot
+ * ------------------------------------------------------------------------- */
+window.__AS = { state: state, buildCommand: buildCommand, select: select, applyPreset: applyPreset, partObjs: partObjs };
+select('Head'); changed(); renderPresets();
+document.body.classList.add('ready');
+}   // end start()
+})();
+</script>
+</body>
+</html>
