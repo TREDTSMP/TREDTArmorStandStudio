@@ -1,0 +1,1271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Armor Stand Studio</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { height: 100%; margin: 0; background: #0b0f14; color: #e5e7eb;
+    font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; }
+  body { visibility: hidden; }            /* shown once libraries have loaded */
+  body.ready { visibility: visible; }
+  #viewport canvas { display: block; outline: none; touch-action: none; }
+  input[type=range] { accent-color: #34d399; }
+  .cmd .k { color: #7dd3fc; } .cmd .n { color: #fbbf24; } .cmd .s { color: #94a3b8; }
+  ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="h-full flex flex-col lg:flex-row">
+
+  <!-- 3D viewport -->
+  <main class="relative flex-1 min-h-[340px]">
+    <div id="viewport" class="absolute inset-0"></div>
+    <div class="absolute top-3 left-3 pointer-events-none select-none">
+      <div class="text-sm font-semibold tracking-wide text-slate-100">Armor Stand Studio</div>
+      <div id="selBadge" class="mt-1 inline-block rounded-md bg-slate-900/80 px-2 py-1 text-xs text-amber-300 border border-amber-400/30"></div>
+    </div>
+    <button id="resetView" class="absolute top-3 right-3 rounded-md border border-slate-700 bg-slate-900/80 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800">Reset view</button>
+    <div class="absolute bottom-3 left-3 right-3 text-[11px] leading-relaxed text-slate-400 pointer-events-none select-none">
+      Drag a body part to rotate it &middot; <b>Shift</b>+drag = roll &middot; drag the background or use right-drag to orbit &middot; scroll to zoom
+    </div>
+    <div id="loadErr" class="hidden absolute inset-0 place-items-center p-8 text-center text-slate-300"></div>
+  </main>
+
+  <!-- Control panel -->
+  <aside class="w-full lg:w-[420px] lg:h-full overflow-y-auto border-t lg:border-t-0 lg:border-l border-slate-800 bg-slate-950/70 p-4 space-y-4">
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-3">
+      <h2 class="px-2 pb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Attributes</h2>
+      <div id="options" class="space-y-0.5"></div>
+      <div class="mt-2 flex items-center gap-3 px-3 py-2">
+        <span class="w-24 text-sm font-medium text-slate-100">Facing<br><code class="text-[11px] font-normal text-slate-400">Rotation:[yaw]</code></span>
+        <input id="facing" type="range" min="-180" max="180" step="1" class="flex-1">
+        <input id="facingNum" type="number" min="-180" max="180" step="1" class="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-sm">
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <h2 class="pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Equipment</h2>
+      <div id="equipBtns" class="grid grid-cols-2 gap-2"></div>
+      <div id="equipActions" class="mt-2 grid grid-cols-2 gap-2"></div>
+      <div id="equipPanels"></div>
+      <div id="equipSummary" class="mt-2 text-[11px] leading-relaxed text-slate-400"></div>
+      <div id="texStatus" class="mt-1 hidden text-[11px] leading-relaxed text-amber-300/80"></div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <h2 class="pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Body part</h2>
+      <div id="partBtns" class="grid grid-cols-3 gap-2"></div>
+      <div id="rot" class="mt-4 space-y-3"></div>
+      <div class="mt-4 flex gap-2">
+        <button id="resetPart" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Reset this part</button>
+        <button id="resetAll" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Reset all poses</button>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div class="flex items-baseline justify-between pb-2">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Minecraft Client &middot; /summon command</h2>
+        <span id="cmdLen" class="text-[11px] text-slate-500"></span>
+      </div>
+      <pre id="cmd" class="cmd select-all whitespace-pre-wrap break-all rounded-lg border border-slate-800 bg-slate-950 p-3 text-[13px] leading-relaxed font-mono"></pre>
+      <p id="cmdWarn" class="mt-2 hidden text-[11px] text-amber-300">Long command: it may not fit in the chat box. Use a command block or a function file instead.</p>
+      <label class="mt-3 flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+        <input id="fullPose" type="checkbox" class="accent-emerald-500"> Include every pose value (not only the ones you changed)
+      </label>
+      <button id="copyBtn" class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 active:scale-[.99]">
+        <span class="ci">&#128203;</span><span class="ct">Copy Minecraft Client command</span>
+      </button>
+
+      <div class="mt-5 border-t border-slate-800 pt-4">
+        <h2 class="pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">TREDT SMP 3 &middot; /armor command</h2>
+        <pre id="cmd2" class="cmd select-all whitespace-pre-wrap break-all rounded-lg border border-slate-800 bg-slate-950 p-3 text-[13px] leading-relaxed font-mono"></pre>
+        <button id="copyBtn2" class="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-sky-400 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 active:scale-[.99]">
+          <span class="ci">&#128203;</span><span class="ct">Copy TREDT SMP 3 command</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <h2 class="pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Presets</h2>
+      <div id="builtins" class="flex flex-wrap gap-2"></div>
+      <div class="mt-4 text-[11px] uppercase tracking-wider text-slate-500">My presets</div>
+      <div id="myPresets" class="mt-2 space-y-1"></div>
+      <div class="mt-3 flex gap-2">
+        <input id="presetName" type="text" maxlength="60" placeholder="Preset name" class="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm placeholder:text-slate-600">
+        <button id="savePreset" class="rounded-md bg-slate-700 px-3 py-1.5 text-sm hover:bg-slate-600">Save</button>
+      </div>
+      <div class="mt-2 flex gap-2">
+        <button id="exportBtn" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Export to file&hellip;</button>
+        <button id="importBtn" class="flex-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs hover:bg-slate-800">Import from file&hellip;</button>
+        <input id="importFile" type="file" accept="application/json,.json" class="hidden">
+      </div>
+    </section>
+  </aside>
+</div>
+
+<div id="toast" class="pointer-events-none fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-lg bg-slate-100 px-4 py-2 text-sm font-medium text-slate-900 opacity-0 shadow-lg transition-opacity"></div>
+
+<script src="textures-data.js"></script>
+<script>
+(function () {
+'use strict';
+
+/* ---------------------------------------------------------------------------
+ * Library loading: local vendor/ copy first (offline exe), CDN as fallback.
+ * ------------------------------------------------------------------------- */
+function loadScript(urls) {
+  return new Promise(function (resolve, reject) {
+    var i = 0;
+    (function next() {
+      if (i >= urls.length) return reject(new Error('Could not load ' + urls[urls.length - 1]));
+      var s = document.createElement('script');
+      s.src = urls[i++];
+      s.onload = resolve;
+      s.onerror = function () { s.remove(); next(); };
+      document.head.appendChild(s);
+    })();
+  });
+}
+var THREE_URLS = ['vendor/three.min.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'];
+var ORBIT_URLS = ['vendor/OrbitControls.js',
+  'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js'];
+var TAILWIND_URLS = ['vendor/tailwind.js', 'https://cdn.tailwindcss.com/3.4.1'];
+
+Promise.all([
+  loadScript(THREE_URLS).then(function () { return loadScript(ORBIT_URLS); }),
+  loadScript(TAILWIND_URLS).catch(function () { return null; })   // UI still works unstyled
+]).then(start).catch(function (err) {
+  document.body.classList.add('ready');
+  var box = document.getElementById('loadErr');
+  box.classList.remove('hidden'); box.classList.add('grid');
+  box.textContent = 'The 3D engine could not be loaded (' + err.message + '). Check your internet connection and restart.';
+});
+
+function start() {
+const $ = function (s) { return document.querySelector(s); };
+const DEG = Math.PI / 180;
+
+/* ---------------------------------------------------------------------------
+ * Armor stand model (units = Minecraft "pixels", 16 px = 1 block).
+ * Boxes are [x0,y0,z0, x1,y1,z1] relative to the part's pivot. World axes:
+ * +X east, +Y up, +Z south (the stand faces +Z).
+ * Dimensions follow the vanilla armor stand model.
+ * ------------------------------------------------------------------------- */
+const PARTS = [
+  { key: 'Head', label: 'Head', pivot: [0, 23, 0], def: [0, 0, 0], boxes: [[-1, 0, -1, 1, 7, 1]] },
+  { key: 'Body', label: 'Body', pivot: [0, 24, 0], def: [0, 0, 0], boxes: [
+      [-6, -3, -1.5, 6, 0, 1.5],   // shoulder bar
+      [-3, -10, -1, -1, -3, 1],    // right rib stick
+      [1, -10, -1, 3, -3, 1],      // left rib stick
+      [-4, -12, -1, 4, -10, 1] ] },// hip bar
+  { key: 'RightArm', label: 'Right arm', arm: true, pivot: [-5, 22, 0], def: [-15, 0, 10], boxes: [[-2, -10, -1, 0, 2, 1]] },
+  { key: 'LeftArm',  label: 'Left arm',  arm: true, pivot: [5, 22, 0],  def: [-10, 0, -10], boxes: [[0, -10, -1, 2, 2, 1]] },
+  { key: 'RightLeg', label: 'Right leg', pivot: [-1.9, 12, 0], def: [1, 0, 1],   boxes: [[-1, -11, -1, 1, 0, 1]] },
+  { key: 'LeftLeg',  label: 'Left leg',  pivot: [1.9, 12, 0],  def: [-1, 0, -1], boxes: [[-1, -11, -1, 1, 0, 1]] }
+];
+const BASEPLATE = [-6, 0, -6, 6, 1, 6];
+const PART_BY_KEY = {}; PARTS.forEach(function (p) { PART_BY_KEY[p.key] = p; });
+const CMD_ORDER = ['Head', 'Body', 'LeftArm', 'RightArm', 'LeftLeg', 'RightLeg'];
+
+const OPTIONS = [
+  { id: 'showArms',  label: 'Show arms',  tag: 'ShowArms:1b' },
+  { id: 'baseplate', label: 'Baseplate',  tag: 'NoBasePlate:1b when hidden' },
+  { id: 'invisible', label: 'Invisible',  tag: 'Invisible:1b' },
+  { id: 'small',     label: 'Small',      tag: 'Small:1b' },
+  { id: 'noGravity', label: 'No gravity', tag: 'NoGravity:1b' }
+];
+const DEFAULT_OPTS = { showArms: true, baseplate: true, invisible: false, small: false, noGravity: false, rotation: 0 };
+
+/* ---------------------------------------------------------------------------
+ * State
+ * ------------------------------------------------------------------------- */
+const state = { opts: Object.assign({}, DEFAULT_OPTS), pose: {}, selected: 'Head', full: false };
+function resetPoses() { PARTS.forEach(function (p) { state.pose[p.key] = p.def.slice(); }); }
+resetPoses();
+
+const clamp180 = function (v) { return Math.max(-180, Math.min(180, v)); };
+const wrap180 = function (a) { a = ((a + 180) % 360 + 360) % 360 - 180; return a === -180 ? 180 : a; };
+
+/* ---------------------------------------------------------------------------
+ * Command generation
+ * ------------------------------------------------------------------------- */
+function fnum(v) {
+  var s = String(Math.round(v * 100) / 100);
+  if (s === '-0') s = '0';
+  return s + 'f';
+}
+function buildCommand(verb) {   // verb: 'summon' (Minecraft Client, default) or 'armor' (TREDT SMP 3)
+  var o = state.opts, tags = [];
+  if (o.showArms) tags.push('ShowArms:1b');
+  if (!o.baseplate) tags.push('NoBasePlate:1b');
+  if (o.invisible) tags.push('Invisible:1b');
+  if (o.small) tags.push('Small:1b');
+  if (o.noGravity) tags.push('NoGravity:1b');
+  if (Math.abs(o.rotation) > 1e-6) tags.push('Rotation:[' + fnum(o.rotation) + ']');
+  var pose = [];
+  CMD_ORDER.forEach(function (key) {
+    var p = PART_BY_KEY[key];
+    if (p.arm && !o.showArms) return;
+    var v = state.pose[key];
+    var changed = v.some(function (a, i) { return Math.abs(a - p.def[i]) > 1e-6; });
+    if (state.full || changed) pose.push(key + ':[' + fnum(v[0]) + ',' + fnum(v[1]) + ',' + fnum(v[2]) + ']');
+  });
+  if (pose.length) tags.push('Pose:{' + pose.join(',') + '}');
+  return '/' + (verb || 'summon') + ' minecraft:armor_stand ~ ~ ~' + (tags.length ? ' {' + tags.join(',') + '}' : '');
+}
+function highlight(cmd) {
+  var esc = cmd.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return esc
+    .replace(/^\/(summon|armor) minecraft:armor_stand/, '<span class="s">$&</span>')
+    .replace(/\b(ShowArms|NoBasePlate|Invisible|Small|NoGravity|Rotation|Pose|Head|Body|LeftArm|RightArm|LeftLeg|RightLeg|equipment|head|chest|legs|feet|mainhand|offhand|id|count|components|pattern|material)(?=:)/g, '<span class="k">$1</span>')
+    .replace(/(-?\d+(?:\.\d+)?[fb])(?![a-zA-Z])/g, '<span class="n">$1</span>');
+}
+
+/* ---------------------------------------------------------------------------
+ * Procedural pixel textures (so the app needs no downloaded game assets).
+ * To use your own: place tileable textures at web/textures/wood.png and
+ * web/textures/stone.png (e.g. oak_planks.png / smooth_stone.png).
+ * ------------------------------------------------------------------------- */
+function rng(seed) { return function () { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }; }
+function pixelTexture(c) {
+  var t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function makeWoodTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 16;
+  var g = c.getContext('2d'), r = rng(7);
+  var bases = [[186, 148, 92], [176, 138, 84], [192, 154, 98], [181, 143, 89]];
+  for (var y = 0; y < 16; y++) {
+    var row = Math.floor(y / 4);
+    for (var x = 0; x < 16; x++) {
+      var n = (r() - 0.5) * 18;
+      if (y % 4 === 3) n -= 22;
+      if ((x + row * 5) % 16 === 0) n -= 14;
+      var col = bases[row].map(function (v) { return Math.max(0, Math.min(255, Math.round(v + n))); });
+      g.fillStyle = 'rgb(' + col.join(',') + ')'; g.fillRect(x, y, 1, 1);
+    }
+  }
+  return pixelTexture(c);
+}
+function makeStoneTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 16;
+  var g = c.getContext('2d'), r = rng(23);
+  for (var y = 0; y < 16; y++) for (var x = 0; x < 16; x++) {
+    var v = Math.round(128 + (r() - 0.5) * 22 - (r() < 0.06 ? 24 : 0));
+    g.fillStyle = 'rgb(' + v + ',' + v + ',' + (v + 2) + ')'; g.fillRect(x, y, 1, 1);
+  }
+  return pixelTexture(c);
+}
+function makeBlobTexture() {
+  var c = document.createElement('canvas'); c.width = c.height = 64;
+  var g = c.getContext('2d'), grd = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(0,0,0,.55)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+/* ---------------------------------------------------------------------------
+ * Three.js scene
+ * ------------------------------------------------------------------------- */
+const viewportEl = $('#viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+viewportEl.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0e1420);
+const camera = new THREE.PerspectiveCamera(35, 1, 1, 2000);
+const CAM_START = new THREE.Vector3(55, 42, 88), CAM_TARGET = new THREE.Vector3(0, 16, 0);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+controls.enablePan = false; controls.minDistance = 35; controls.maxDistance = 260;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+function resetView() { camera.position.copy(CAM_START); controls.target.copy(CAM_TARGET); controls.update(); }
+resetView();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.85));
+var sun = new THREE.DirectionalLight(0xffffff, 0.55); sun.position.set(40, 90, 60); scene.add(sun);
+
+var grid = new THREE.GridHelper(160, 20, 0x2b3a52, 0x1a2436); grid.position.y = -0.02; scene.add(grid);
+var blob = new THREE.Mesh(new THREE.PlaneGeometry(40, 40),
+  new THREE.MeshBasicMaterial({ map: makeBlobTexture(), transparent: true, depthWrite: false }));
+blob.rotation.x = -Math.PI / 2; blob.position.y = 0.03; scene.add(blob);
+
+var woodTex = makeWoodTexture(), stoneTex = makeStoneTexture();
+var allMats = [];                       // every stand material (for ghost mode)
+function newMat(tex) {
+  var m = new THREE.MeshLambertMaterial({ map: tex, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+  allMats.push(m); return m;
+}
+// Optional user-supplied textures override the procedural ones.
+function tryTexture(url, apply) {
+  new THREE.TextureLoader().load(url, function (t) {
+    t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping; apply(t);
+  }, undefined, function () { /* no custom texture: keep procedural */ });
+}
+
+function makeBox(b, mat) {
+  var w = b[3] - b[0], h = b[4] - b[1], d = b[5] - b[2];
+  var geo = new THREE.BoxGeometry(w, h, d);
+  geo.translate((b[0] + b[3]) / 2, (b[1] + b[4]) / 2, (b[2] + b[5]) / 2);
+  // Scale UVs so one texture tile = 16 px (keeps pixels square on thin sticks).
+  var uv = geo.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (var f = 0; f < 6; f++) for (var v = 0; v < 4; v++) {
+    var i = f * 4 + v;
+    uv.setXY(i, uv.getX(i) * dims[f][0] / 16, uv.getY(i) * dims[f][1] / 16);
+  }
+  uv.needsUpdate = true;
+  return new THREE.Mesh(geo, mat);
+}
+
+const root = new THREE.Group(); scene.add(root);     // vertical offset (no-gravity float)
+const stand = new THREE.Group(); root.add(stand);    // scale (small) + facing
+const partObjs = {};
+var woodMats = [];
+
+PARTS.forEach(function (p) {
+  var g = new THREE.Group();
+  g.position.set(p.pivot[0], p.pivot[1], p.pivot[2]);
+  g.rotation.order = 'ZYX';              // Minecraft applies Z, then Y, then X
+  var mat = newMat(woodTex); woodMats.push(mat);
+  var edgeMat = new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 });
+  var meshes = p.boxes.map(function (b) {
+    var m = makeBox(b, mat);
+    m.userData.part = p.key;
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), edgeMat));
+    g.add(m); return m;
+  });
+  stand.add(g);
+  partObjs[p.key] = { group: g, meshes: meshes, mat: mat, edgeMat: edgeMat };
+});
+
+var baseMat = newMat(stoneTex);
+var baseGroup = new THREE.Group();
+var baseMesh = makeBox(BASEPLATE, baseMat);
+baseMesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(baseMesh.geometry),
+  new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.55 })));
+baseGroup.add(baseMesh); stand.add(baseGroup);
+
+tryTexture('textures/wood.png', function (t) { woodMats.forEach(function (m) { m.map = t; m.needsUpdate = true; }); });
+tryTexture('textures/stone.png', function (t) { baseMat.map = t; baseMat.needsUpdate = true; });
+
+var axes = new THREE.AxesHelper(10);     // gizmo on the selected part
+axes.material.depthTest = false; axes.renderOrder = 10;
+
+/* ---- applying state to the scene ---- */
+var hovered = null;
+function refreshHighlights() {
+  PARTS.forEach(function (p) {
+    var o = partObjs[p.key], sel = p.key === state.selected, hov = p.key === hovered && !sel;
+    o.mat.emissive.setHex(sel ? 0x4a3b00 : hov ? 0x262626 : 0x000000);
+    o.edgeMat.color.setHex(sel ? 0xfacc15 : hov ? 0xffffff : 0x000000);
+    o.edgeMat.opacity = sel || hov ? 1 : 0.55;
+  });
+}
+function applyPose() {
+  PARTS.forEach(function (p) {
+    var o = partObjs[p.key], v = state.pose[p.key];
+    // Minecraft model space -> world: X keeps its sign, Y and Z are mirrored.
+    o.group.rotation.set(v[0] * DEG, -v[1] * DEG, -v[2] * DEG);
+    o.group.visible = !p.arm || state.opts.showArms;
+  });
+}
+function applyOptions() {
+  var o = state.opts;
+  baseGroup.visible = o.baseplate;
+  stand.scale.setScalar(o.small ? 0.5 : 1);
+  stand.rotation.y = -o.rotation * DEG;                 // +yaw = clockwise from above
+  blob.scale.setScalar(o.small ? 0.5 : 1); blob.visible = !o.invisible;
+  allMats.forEach(function (m) {                        // invisible = ghost preview
+    m.transparent = o.invisible; m.opacity = o.invisible ? 0.3 : 1; m.depthWrite = !o.invisible; m.needsUpdate = true;
+  });
+}
+
+function resize() {
+  var w = viewportEl.clientWidth, h = viewportEl.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewportEl); resize();
+
+(function tick(t) {
+  controls.update();
+  root.position.y = state.opts.noGravity ? 12 + Math.sin(t / 600) * 0.8 : 0;   // float preview
+  glintTick(t);
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+})(0);
+
+/* ---------------------------------------------------------------------------
+ * Picking & mouse posing
+ * ------------------------------------------------------------------------- */
+const raycaster = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(e) {
+  var r = renderer.domElement.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  var objs = [];
+  PARTS.forEach(function (p) { var o = partObjs[p.key]; if (o.group.visible) objs = objs.concat(o.meshes, o.extra || []); });
+  var hit = raycaster.intersectObjects(objs, false)[0];
+  return hit ? hit.object.userData.part : null;
+}
+var drag = null;
+// Capture phase: runs before OrbitControls so we can take over the gesture.
+viewportEl.addEventListener('pointerdown', function (e) {
+  if (e.button !== 0) return;
+  var k = pick(e);
+  if (!k) return;                                       // background -> orbit
+  select(k);
+  drag = { key: k, x: e.clientX, y: e.clientY };
+  controls.enabled = false;
+  renderer.domElement.style.cursor = 'grabbing';
+}, true);
+window.addEventListener('pointermove', function (e) {
+  if (!drag) return;
+  var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  var v = state.pose[drag.key], sgn = camera.position.z >= 0 ? 1 : -1, k = 0.6;
+  if (e.shiftKey) {
+    v[2] = wrap180(v[2] + dx * k * sgn);                               // roll
+  } else {
+    v[1] = wrap180(v[1] - dx * k * sgn);                               // yaw
+    v[0] = wrap180(v[0] + (drag.key === 'Head' ? 1 : -1) * dy * k * sgn * (state.invert ? -1 : 1)); // pitch
+  }
+  changed();
+});
+function endDrag() { if (drag) { drag = null; controls.enabled = true; renderer.domElement.style.cursor = 'default'; } }
+window.addEventListener('pointerup', endDrag);
+window.addEventListener('pointercancel', endDrag);
+viewportEl.addEventListener('pointermove', function (e) {
+  if (drag || e.buttons) return;
+  var k = pick(e);
+  if (k !== hovered) { hovered = k; refreshHighlights(); }
+  renderer.domElement.style.cursor = k ? 'grab' : 'default';
+});
+viewportEl.addEventListener('pointerleave', function () { if (hovered) { hovered = null; refreshHighlights(); } });
+viewportEl.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+$('#resetView').addEventListener('click', resetView);
+
+/* ---------------------------------------------------------------------------
+ * UI construction
+ * ------------------------------------------------------------------------- */
+// Option toggles
+OPTIONS.forEach(function (o) {
+  var row = document.createElement('label');
+  row.className = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-slate-800/60';
+  row.innerHTML =
+    '<span><span class="block text-sm font-medium text-slate-100">' + o.label + '</span>' +
+    '<code class="text-[11px] text-slate-400">' + o.tag + '</code></span>' +
+    '<span class="relative inline-flex"><input type="checkbox" class="peer sr-only" data-opt="' + o.id + '">' +
+    '<span class="block h-6 w-11 rounded-full bg-slate-600 transition peer-checked:bg-emerald-500 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-300"></span>' +
+    '<span class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5"></span></span>';
+  $('#options').appendChild(row);
+  row.querySelector('input').addEventListener('change', function (e) {
+    state.opts[o.id] = e.target.checked;
+    if (o.id === 'showArms' && !e.target.checked && PART_BY_KEY[state.selected].arm) select('Head');
+    changed();
+  });
+});
+function setFacing(v) { state.opts.rotation = clamp180(v); changed(); }
+$('#facing').addEventListener('input', function (e) { setFacing(parseFloat(e.target.value)); });
+$('#facingNum').addEventListener('input', function (e) { var v = parseFloat(e.target.value); if (!isNaN(v)) setFacing(v); });
+$('#facingNum').addEventListener('change', syncUI);
+
+// Part buttons
+PARTS.forEach(function (p) {
+  var b = document.createElement('button');
+  b.dataset.key = p.key; b.textContent = p.label;
+  b.addEventListener('click', function () { select(p.key); });
+  $('#partBtns').appendChild(b);
+});
+
+// Rotation rows
+const AXES = [
+  { name: 'Pitch', axis: 'X', cls: 'text-rose-400' },
+  { name: 'Yaw',   axis: 'Y', cls: 'text-emerald-400' },
+  { name: 'Roll',  axis: 'Z', cls: 'text-sky-400' }
+];
+AXES.forEach(function (a, i) {
+  var row = document.createElement('div');
+  row.className = 'flex items-center gap-3';
+  row.innerHTML =
+    '<span class="w-16 text-sm font-medium ' + a.cls + '">' + a.name + ' <span class="text-xs opacity-70">' + a.axis + '</span></span>' +
+    '<input type="range" min="-180" max="180" step="1" class="flex-1" data-r="' + i + '">' +
+    '<input type="number" min="-180" max="180" step="0.5" class="w-20 rounded-md border border-slate-700 bg-slate-950 px-2 py-1 text-right text-sm" data-n="' + i + '">';
+  $('#rot').appendChild(row);
+  row.querySelector('[data-r]').addEventListener('input', function (e) { setAngle(i, parseFloat(e.target.value)); });
+  var num = row.querySelector('[data-n]');
+  num.addEventListener('input', function (e) { var v = parseFloat(e.target.value); if (!isNaN(v)) setAngle(i, v); });
+  num.addEventListener('change', syncUI);
+});
+function setAngle(i, v) { state.pose[state.selected][i] = clamp180(v); changed(); }
+
+$('#resetPart').addEventListener('click', function () { state.pose[state.selected] = PART_BY_KEY[state.selected].def.slice(); changed(); });
+$('#resetAll').addEventListener('click', function () { resetPoses(); changed(); });
+$('#fullPose').addEventListener('change', function (e) { state.full = e.target.checked; syncUI(); });
+
+function select(key) {
+  state.selected = key;
+  if (axes.parent) axes.parent.remove(axes);
+  partObjs[key].group.add(axes);
+  refreshHighlights(); syncUI();
+}
+function changed() { applyPose(); applyOptions(); syncUI(); }
+
+/* ---- sync state -> DOM ---- */
+function syncUI() {
+  document.querySelectorAll('[data-opt]').forEach(function (el) { el.checked = !!state.opts[el.dataset.opt]; });
+  var rot = state.opts.rotation;
+  $('#facing').value = rot;
+  if (document.activeElement !== $('#facingNum')) $('#facingNum').value = rot;
+
+  document.querySelectorAll('#partBtns button').forEach(function (b) {
+    var p = PART_BY_KEY[b.dataset.key], sel = p.key === state.selected, off = p.arm && !state.opts.showArms;
+    b.disabled = off;
+    b.className = 'rounded-md border px-2 py-2 text-sm transition ' +
+      (off ? 'cursor-not-allowed border-slate-800 text-slate-600' :
+       sel ? 'border-amber-400 bg-amber-400/15 text-amber-200' :
+             'border-slate-700 text-slate-200 hover:bg-slate-800');
+  });
+  var v = state.pose[state.selected];
+  for (var i = 0; i < 3; i++) {
+    $('[data-r="' + i + '"]').value = Math.round(v[i]);
+    var n = $('[data-n="' + i + '"]');
+    if (document.activeElement !== n) n.value = Math.round(v[i] * 10) / 10;
+  }
+  $('#selBadge').textContent = PART_BY_KEY[state.selected].label + '  [' + v.map(function (a) { return Math.round(a * 10) / 10; }).join(', ') + ']';
+
+  var cmd = buildCommand();
+  $('#cmd').innerHTML = highlight(cmd);
+  $('#cmd2').innerHTML = highlight(buildCommand('armor'));
+  $('#cmdLen').textContent = cmd.length + ' chars';
+  $('#cmdWarn').classList.toggle('hidden', cmd.length <= 256);
+}
+
+/* ---------------------------------------------------------------------------
+ * Copy to clipboard (Python/pyperclip first, browser APIs as fallback)
+ * ------------------------------------------------------------------------- */
+const hasPy = function () { return !!(window.pywebview && window.pywebview.api && window.pywebview.api.copy_text); };
+function fallbackCopy(text) {
+  var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+  ta.remove(); return ok;
+}
+function setupCopy(btnSel, verb, label) {
+  var btn = $(btnSel), icon = btn.querySelector('.ci'), txt = btn.querySelector('.ct'), timer = null;
+  btn.addEventListener('click', async function () {
+    var text = buildCommand(verb), ok = false;
+    if (hasPy()) { try { var r = await window.pywebview.api.copy_text(text); ok = !!(r && r.ok); } catch (e) {} }
+    if (!ok) { try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { ok = fallbackCopy(text); } }
+    icon.textContent = ok ? '✔' : '⚠';
+    txt.textContent = ok ? 'Copied!' : 'Copy failed - select the command and press Ctrl+C';
+    btn.classList.toggle('brightness-125', ok);
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      icon.textContent = '📋'; txt.textContent = label; btn.classList.remove('brightness-125');
+    }, 1800);
+  });
+}
+setupCopy('#copyBtn', 'summon', 'Copy Minecraft Client command');
+setupCopy('#copyBtn2', 'armor', 'Copy TREDT SMP 3 command');
+
+/* ---------------------------------------------------------------------------
+ * Presets
+ * ------------------------------------------------------------------------- */
+var toastTimer = null;
+function toast(msg) {
+  var t = $('#toast'); t.textContent = msg; t.style.opacity = '1';
+  clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.style.opacity = '0'; }, 2000);
+}
+const BUILTIN = {
+  'Default':  { opts: {}, pose: {} },
+  'Wave':     { opts: {}, pose: { RightArm: [-165, 0, 15], Head: [0, 0, 5] } },
+  'Zombie':   { opts: {}, pose: { RightArm: [-90, 0, 0], LeftArm: [-90, 0, 0] } },
+  'Walking':  { opts: {}, pose: { RightArm: [-35, 0, 5], LeftArm: [35, 0, -5], RightLeg: [30, 0, 0], LeftLeg: [-30, 0, 0] } },
+  'Sitting':  { opts: { baseplate: false }, pose: { RightLeg: [-90, 0, 0], LeftLeg: [-90, 0, 0], RightArm: [-20, 0, 5], LeftArm: [-20, 0, -5], Head: [10, 0, 0] } },
+  'Pointing': { opts: {}, pose: { RightArm: [-90, -25, 0], Head: [0, -20, 0] } }
+};
+function serialize(name) {
+  var pose = {}; PARTS.forEach(function (p) { pose[p.key] = state.pose[p.key].slice(); });
+  return { app: 'ArmorStandStudio', version: 1, name: name || '', options: Object.assign({}, state.opts), pose: pose };
+}
+function applyPreset(data) {
+  var opts = data.options || data.opts || {}, pose = data.pose || {};
+  state.opts = Object.assign({}, DEFAULT_OPTS);
+  Object.keys(DEFAULT_OPTS).forEach(function (k) {
+    if (k in opts) state.opts[k] = (k === 'rotation') ? clamp180(Number(opts[k]) || 0) : !!opts[k];
+  });
+  resetPoses();
+  PARTS.forEach(function (p) {
+    var v = pose[p.key];
+    if (Array.isArray(v) && v.length === 3 && v.every(function (n) { return isFinite(Number(n)); })) {
+      state.pose[p.key] = v.map(function (n) { return clamp180(Number(n)); });
+    }
+  });
+  if (PART_BY_KEY[state.selected].arm && !state.opts.showArms) select('Head');
+  changed();
+}
+
+// Storage: Python (config folder) when running as the desktop app, localStorage in a plain browser.
+const LS_KEY = 'armorStandStudio.presets';
+const Store = {
+  async list() {
+    if (hasPy()) { try { return await window.pywebview.api.list_presets() || {}; } catch (e) { return {}; } }
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { return {}; }
+  },
+  async save(name, data) {
+    if (hasPy()) { var r = await window.pywebview.api.save_preset(name, data); return !!(r && r.ok); }
+    try { var all = await this.list(); all[name] = data; localStorage.setItem(LS_KEY, JSON.stringify(all)); return true; } catch (e) { return false; }
+  },
+  async remove(name) {
+    if (hasPy()) { await window.pywebview.api.delete_preset(name); return; }
+    try { var all = await this.list(); delete all[name]; localStorage.setItem(LS_KEY, JSON.stringify(all)); } catch (e) {}
+  },
+  async exportFile(data, name) {
+    if (hasPy()) { var r = await window.pywebview.api.export_preset(data, name || 'armor-stand-pose'); return r && r.ok; }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    a.download = (name || 'armor-stand-pose') + '.json'; document.body.appendChild(a); a.click(); a.remove();
+    return true;
+  }
+};
+
+async function renderPresets() {
+  var list = $('#myPresets'), all = await Store.list(), names = Object.keys(all).sort();
+  list.innerHTML = '';
+  if (!names.length) {
+    var empty = document.createElement('div'); empty.className = 'text-xs text-slate-500'; empty.textContent = 'Nothing saved yet.';
+    list.appendChild(empty); return;
+  }
+  names.forEach(function (name) {
+    var row = document.createElement('div');
+    row.className = 'flex items-center gap-2 rounded-md bg-slate-950 px-2 py-1';
+    var load = document.createElement('button');
+    load.className = 'min-w-0 flex-1 truncate text-left text-sm hover:text-emerald-300'; load.textContent = name;
+    load.addEventListener('click', function () { applyPreset(all[name]); toast('Loaded "' + name + '"'); });
+    var del = document.createElement('button');
+    del.className = 'text-xs text-slate-500 hover:text-rose-400'; del.textContent = 'Delete';
+    del.addEventListener('click', async function () { await Store.remove(name); renderPresets(); });
+    row.appendChild(load); row.appendChild(del); list.appendChild(row);
+  });
+}
+Object.keys(BUILTIN).forEach(function (name) {
+  var b = document.createElement('button');
+  b.className = 'rounded-full border border-slate-700 px-3 py-1 text-xs hover:bg-slate-800'; b.textContent = name;
+  b.addEventListener('click', function () { applyPreset({ options: Object.assign({ showArms: true }, BUILTIN[name].opts), pose: BUILTIN[name].pose }); });
+  $('#builtins').appendChild(b);
+});
+$('#savePreset').addEventListener('click', async function () {
+  var name = $('#presetName').value.trim();
+  if (!name) { $('#presetName').focus(); return; }
+  var ok = await Store.save(name, serialize(name));
+  toast(ok ? 'Saved "' + name + '"' : 'Could not save preset'); if (ok) { $('#presetName').value = ''; renderPresets(); }
+});
+$('#exportBtn').addEventListener('click', async function () {
+  var name = $('#presetName').value.trim() || 'armor-stand-pose';
+  var ok = await Store.exportFile(serialize(name), name); if (ok) toast('Exported');
+});
+$('#importBtn').addEventListener('click', async function () {
+  if (hasPy()) {
+    var r = await window.pywebview.api.import_preset();
+    if (r && r.ok) { applyPreset(r.data); toast('Imported'); }
+    else if (r && r.error) toast('Import failed: ' + r.error);
+  } else { $('#importFile').click(); }
+});
+$('#importFile').addEventListener('change', function (e) {
+  var f = e.target.files[0]; if (!f) return;
+  var rd = new FileReader();
+  rd.onload = function () { try { applyPreset(JSON.parse(rd.result)); toast('Imported'); } catch (err) { toast('Not a valid preset file'); } };
+  rd.readAsText(f); e.target.value = '';
+});
+
+/* ---------------------------------------------------------------------------
+ * Equipment: armor sets, trims, hand items
+ * Textures are optional: drop the game's own PNGs into textures/ (same folder
+ * layout as the resource pack, see textures/README.txt). Missing ones fall back
+ * to simple placeholders so everything still works.
+ * ------------------------------------------------------------------------- */
+const ARMOR_MATS = [
+  { id: 'leather',   label: 'Leather',   item: 'leather' },
+  { id: 'copper',    label: 'Copper',    item: 'copper' },
+  { id: 'iron',      label: 'Iron',      item: 'iron' },
+  { id: 'gold',      label: 'Gold',      item: 'golden' },
+  { id: 'diamond',   label: 'Diamond',   item: 'diamond' },
+  { id: 'netherite', label: 'Netherite', item: 'netherite' },
+  { id: 'chainmail', label: 'Chainmail', item: 'chainmail' }
+];
+const ARMOR_HEX = { leather: 0xa06540, copper: 0xc0714f, iron: 0xd8d8d8, gold: 0xe9c547, diamond: 0x3fd6c8, netherite: 0x4a4247, chainmail: 0x9a9aa3 };
+const TOOL_MATS = [
+  { id: 'copper',    label: 'Copper',    item: 'copper',    hex: 0xc0714f },
+  { id: 'iron',      label: 'Iron',      item: 'iron',      hex: 0xd8d8d8 },
+  { id: 'diamond',   label: 'Diamond',   item: 'diamond',   hex: 0x3fd6c8 },
+  { id: 'gold',      label: 'Gold',      item: 'golden',    hex: 0xe9c547 },
+  { id: 'netherite', label: 'Netherite', item: 'netherite', hex: 0x4a4247 }
+];
+const TOOL_TYPES = [
+  { id: 'sword',   label: 'Sword',   mats: true },
+  { id: 'pickaxe', label: 'Pickaxe', mats: true },
+  { id: 'axe',     label: 'Axe',     mats: true },
+  { id: 'shovel',  label: 'Shovel',  mats: true },
+  { id: 'hoe',     label: 'Hoe',     mats: true },
+  { id: 'trident', label: 'Trident' },
+  { id: 'mace',    label: 'Mace' },
+  { id: 'shield',  label: 'Shield' }
+];
+const TRIM_PATTERNS = ['Bolt', 'Coast', 'Dune', 'Eye', 'Flow', 'Host', 'Raiser', 'Rib', 'Sentry', 'Shaper', 'Silence', 'Snout', 'Spire', 'Tide', 'Vex', 'Ward', 'Wayfinder', 'Wild']
+  .map(function (n) { return { id: n.toLowerCase(), label: n }; });
+const TRIM_COLORS = [
+  { id: 'amethyst',  label: 'Amethyst Shard',  hex: 0x9a5cc6 },
+  { id: 'copper',    label: 'Copper Ingot',    hex: 0xb4684d },
+  { id: 'diamond',   label: 'Diamond',         hex: 0x6eecd2 },
+  { id: 'emerald',   label: 'Emerald',         hex: 0x11a036 },
+  { id: 'gold',      label: 'Gold Ingot',      hex: 0xdeb12d },
+  { id: 'iron',      label: 'Iron Ingot',      hex: 0xececec },
+  { id: 'lapis',     label: 'Lapis Lazuli',    hex: 0x416e97 },
+  { id: 'netherite', label: 'Netherite Ingot', hex: 0x625859 },
+  { id: 'quartz',    label: 'Nether Quartz',   hex: 0xe3d4c4 },
+  { id: 'redstone',  label: 'Redstone Dust',   hex: 0x971607 },
+  { id: 'resin',     label: 'Resin Brick',     hex: 0xfc7812 }
+];
+const DARKER_PALETTE = ['iron', 'gold', 'diamond', 'netherite', 'copper'];   // armor == trim material -> "_darker" palette
+const ARMOR_PIECES = ['helmet', 'chestplate', 'leggings', 'boots'];
+const SLOT_KEYS = ['head', 'chest', 'legs', 'feet'];
+
+/* which model boxes each armor slot covers: part, texture layer, uv offset, box extents (part-local, y up), inflate */
+const ARMOR_BOXES = [
+  { slot: 'head',  part: 'Head',     layer: 1, u: 0,  v: 0,  ext: [-4, 0, -4, 4, 8, 4],     inf: 1 },
+  { slot: 'chest', part: 'Body',     layer: 1, u: 16, v: 16, ext: [-4, -12, -2, 4, 0, 2],   inf: 1 },
+  { slot: 'chest', part: 'RightArm', layer: 1, u: 40, v: 16, ext: [-3, -10, -2, 1, 2, 2],   inf: 1 },
+  { slot: 'chest', part: 'LeftArm',  layer: 1, u: 40, v: 16, ext: [-1, -10, -2, 3, 2, 2],   inf: 1, mirror: true },
+  { slot: 'legs',  part: 'Body',     layer: 2, u: 16, v: 16, ext: [-4, -12, -2, 4, 0, 2],   inf: 0.5 },
+  { slot: 'legs',  part: 'RightLeg', layer: 2, u: 0,  v: 16, ext: [-2, -12, -2, 2, 0, 2],   inf: 0.5 },
+  { slot: 'legs',  part: 'LeftLeg',  layer: 2, u: 0,  v: 16, ext: [-2, -12, -2, 2, 0, 2],   inf: 0.5, mirror: true },
+  { slot: 'feet',  part: 'RightLeg', layer: 1, u: 0,  v: 16, ext: [-2, -12, -2, 2, 0, 2],   inf: 1 },
+  { slot: 'feet',  part: 'LeftLeg',  layer: 1, u: 0,  v: 16, ext: [-2, -12, -2, 2, 0, 2],   inf: 1, mirror: true }
+];
+
+state.equip = { armor: null, trim: null, color: 'gold', main: null, off: null, glint: false };
+state.invert = false;
+
+/* ---- texture URLs (vanilla resource-pack layout first, a few older names as alternates) ---- */
+function armorUrls(mat, layer) {
+  return layer === 1
+    ? ['textures/entity/equipment/humanoid/' + mat + '.png', 'textures/armor/' + mat + '_layer_1.png', 'textures/models/armor/' + mat + '_layer_1.png']
+    : ['textures/entity/equipment/humanoid_leggings/' + mat + '.png', 'textures/armor/' + mat + '_layer_2.png', 'textures/models/armor/' + mat + '_layer_2.png'];
+}
+function leatherOverlayUrls(layer) {
+  return layer === 1
+    ? ['textures/entity/equipment/humanoid/leather_overlay.png', 'textures/armor/leather_layer_1_overlay.png', 'textures/models/armor/leather_layer_1_overlay.png']
+    : ['textures/entity/equipment/humanoid_leggings/leather_overlay.png', 'textures/armor/leather_layer_2_overlay.png', 'textures/models/armor/leather_layer_2_overlay.png'];
+}
+function trimUrls(pattern, layer) {
+  return layer === 1
+    ? ['textures/trims/entity/humanoid/' + pattern + '.png', 'textures/trims/' + pattern + '.png']
+    : ['textures/trims/entity/humanoid_leggings/' + pattern + '.png', 'textures/trims/' + pattern + '_leggings.png'];
+}
+function paletteUrls(name) { return ['textures/trims/color_palettes/' + name + '.png']; }
+function itemUrls(name) { return ['textures/item/' + name + '.png']; }
+const TRIDENT_URLS = ['textures/entity/trident.png'];
+const SHIELD_URLS = ['textures/entity/shield/shield_base_nopattern.png', 'textures/entity/shield_base_nopattern.png'];
+
+/* ---- image / texture helpers ---- */
+const imgCache = {}, missingTex = {};
+function loadImg(urls) {
+  var key = urls.join('|');
+  if (imgCache[key]) return imgCache[key];
+  return (imgCache[key] = new Promise(function (resolve) {
+    var i = 0;
+    (function next() {
+      if (i >= urls.length) { missingTex[urls[0]] = true; return resolve(null); }
+      var u = urls[i++], emb = window.TEXDATA && window.TEXDATA[u];
+      if (!emb && location.protocol === 'file:') return next();      // loose files are unusable by WebGL on file://
+      var im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = next;
+      im.src = emb || u;
+    })();
+  }));
+}
+function texFrom(src) {
+  var t = src instanceof HTMLCanvasElement ? new THREE.CanvasTexture(src) : new THREE.Texture(src);
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true;
+  return t;
+}
+function readPixels(src) {      // null when the browser blocks pixel access (page opened from file://)
+  try {
+    var c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+    var g = c.getContext('2d'); g.drawImage(src, 0, 0);
+    return { canvas: c, data: g.getImageData(0, 0, c.width, c.height) };
+  } catch (e) { return null; }
+}
+function hexCss(h) { return '#' + ('000000' + h.toString(16)).slice(-6); }
+function mkCanvas(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+
+/* ---- placeholders (used only when a texture file is missing) ---- */
+function placeholderArmor(mat) {
+  var c = mkCanvas(64, 32), g = c.getContext('2d'), r = rng(mat.length * 977 + mat.charCodeAt(0));
+  var base = mat === 'leather' ? 0x9a9a9a : ARMOR_HEX[mat];
+  var br = (base >> 16) & 255, bg = (base >> 8) & 255, bb = base & 255;
+  for (var y = 0; y < 32; y++) for (var x = 0; x < 64; x++) {
+    var n = (r() - 0.5) * 30 + (((x >> 2) + (y >> 2)) % 2 ? 6 : -6);
+    g.fillStyle = 'rgb(' + [br, bg, bb].map(function (v) { return Math.max(0, Math.min(255, Math.round(v + n))); }).join(',') + ')';
+    g.fillRect(x, y, 1, 1);
+  }
+  return c;
+}
+function placeholderTool(tool, hex) {
+  var c = mkCanvas(16, 16), g = c.getContext('2d'), m = hexCss(hex), dk = hexCss(((hex >> 1) & 0x7f7f7f)), wood = '#8b5a2b';
+  function px(x, y, col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); }
+  for (var i = 0; i < 8; i++) px(1 + i, 14 - i, wood);
+  var P = {
+    sword:   [[9,6],[10,5],[11,4],[12,3],[13,2],[14,1],[10,6],[11,5],[12,4],[13,3],[14,2],[8,9],[9,8],[7,8],[8,7],[9,9]],
+    pickaxe: [[8,6],[9,5],[10,4],[11,3],[12,3],[13,4],[14,5],[14,6],[11,2],[12,2],[10,3],[9,4]],
+    axe:     [[8,6],[9,5],[9,4],[10,3],[11,2],[12,2],[11,3],[10,4],[10,5],[11,4],[12,3]],
+    shovel:  [[9,6],[10,5],[11,4],[12,3],[12,4],[11,3],[13,2],[12,2],[13,3]],
+    hoe:     [[8,6],[9,5],[10,4],[11,3],[12,3],[13,3],[13,4],[12,4],[14,3]]
+  }[tool] || [];
+  P.forEach(function (p, k) { px(p[0], p[1], k % 3 === 2 ? dk : m); });
+  return c;
+}
+function placeholderPlain(w, h, hex) {
+  var c = mkCanvas(w, h), g = c.getContext('2d'); g.fillStyle = hexCss(hex); g.fillRect(0, 0, w, h);
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.strokeRect(0.5, 0.5, w - 1, h - 1); return c;
+}
+
+/* ---- Minecraft-style box with proper UV layout (part-local space, y up, front = +Z) ---- */
+function mcBox(u, v, ext, inf, mirror, W, H) {
+  var unit = W / 64;
+  var x0 = ext[0] - inf, y0 = ext[1] - inf, z0 = ext[2] - inf, x1 = ext[3] + inf, y1 = ext[4] + inf, z1 = ext[5] + inf;
+  var w = ext[3] - ext[0], h = ext[4] - ext[1], d = ext[5] - ext[2];
+  var pos = [], nor = [], uv = [], idx = [];
+  function face(c, n, rect) {
+    var b = pos.length / 3, ru = rect[0] * unit, rv = rect[1] * unit, rw = rect[2] * unit, rh = rect[3] * unit;
+    var t = [[ru, rv + rh], [ru + rw, rv + rh], [ru + rw, rv], [ru, rv]];           // BL, BR, TR, TL
+    if (mirror) t = [t[1], t[0], t[3], t[2]];
+    for (var k = 0; k < 4; k++) { pos.push(c[k][0], c[k][1], c[k][2]); nor.push(n[0], n[1], n[2]); uv.push(t[k][0] / W, 1 - t[k][1] / H); }
+    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  var rSide = mirror ? [u + d + w, v + d, d, h] : [u, v + d, d, h];        // entity's right (-X)
+  var lSide = mirror ? [u, v + d, d, h] : [u + d + w, v + d, d, h];        // entity's left  (+X)
+  face([[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]], [0,0,1],  [u + d, v + d, w, h]);          // front
+  face([[x1,y0,z0],[x0,y0,z0],[x0,y1,z0],[x1,y1,z0]], [0,0,-1], [u + 2 * d + w, v + d, w, h]);  // back
+  face([[x0,y0,z0],[x0,y0,z1],[x0,y1,z1],[x0,y1,z0]], [-1,0,0], rSide);
+  face([[x1,y0,z1],[x1,y0,z0],[x1,y1,z0],[x1,y1,z1]], [1,0,0],  lSide);
+  face([[x0,y1,z1],[x1,y1,z1],[x1,y1,z0],[x0,y1,z0]], [0,1,0],  [u + d, v, w, d]);              // top
+  face([[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1]], [0,-1,0], [u + d + w, v, w, d]);          // bottom
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return geo;
+}
+
+/* ---- textures: armor, trims ---- */
+const armorTexCache = {};
+function getArmorTex(mat, layer) {
+  var k = mat + layer;
+  return armorTexCache[k] || (armorTexCache[k] = loadImg(armorUrls(mat, layer)).then(function (im) { return texFrom(im || placeholderArmor(mat)); }));
+}
+function getOverlayTex(layer) {
+  var k = 'ov' + layer;
+  return armorTexCache[k] || (armorTexCache[k] = loadImg(leatherOverlayUrls(layer)).then(function (im) { return im ? texFrom(im) : null; }));
+}
+function paletteColors(im) {
+  var px = im && readPixels(im); if (!px) return null;
+  var out = [], d = px.data.data;
+  for (var i = 0; i < px.data.width; i++) out.push([d[i * 4], d[i * 4 + 1], d[i * 4 + 2]]);
+  return out;
+}
+const trimTexCache = {};
+function getTrimTex(pattern, layer, colorId, armorId) {
+  var palName = (DARKER_PALETTE.indexOf(colorId) >= 0 && armorId === colorId) ? colorId + '_darker' : colorId;
+  var k = pattern + layer + palName;
+  return trimTexCache[k] || (trimTexCache[k] = Promise.all([
+    loadImg(trimUrls(pattern, layer)), loadImg(paletteUrls('trim_palette')), loadImg(paletteUrls(palName))
+  ]).then(function (r) {
+    var im = r[0]; if (!im) return null;
+    var key = paletteColors(r[1]), pal = paletteColors(r[2]), px = readPixels(im);
+    var base = TRIM_COLORS.filter(function (c) { return c.id === colorId; })[0].hex;
+    if (palName !== colorId) base = ((base >> 1) & 0x7f7f7f);                 // fallback tint for "darker"
+    if (px && key && pal && key.length === pal.length) {                      // exact vanilla palette swap
+      var d = px.data.data;
+      for (var i = 0; i < d.length; i += 4) {
+        if (!d[i + 3]) continue;
+        var best = 0, bd = 1e9;
+        for (var j = 0; j < key.length; j++) {
+          var dd = Math.abs(d[i] - key[j][0]) + Math.abs(d[i + 1] - key[j][1]) + Math.abs(d[i + 2] - key[j][2]);
+          if (dd < bd) { bd = dd; best = j; }
+        }
+        d[i] = pal[best][0]; d[i + 1] = pal[best][1]; d[i + 2] = pal[best][2];
+      }
+      px.canvas.getContext('2d').putImageData(px.data, 0, 0);
+      return { tex: texFrom(px.canvas), tint: 0xffffff };
+    }
+    return { tex: texFrom(im), tint: new THREE.Color(base).multiplyScalar(255 / 224) };                                  // approximate: tint the grey trim
+  }));
+}
+
+/* ---- sprite items extruded 1px thick, like the game does ---- */
+function extrudeSprite(src, tex) {
+  var W = src.width, H = src.height, s = 16 / W, px = readPixels(src);
+  if (!px) {                                          // pixels unreadable: flat double-sided card
+    var m = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }));
+    m.position.set(8, 8, 8); return m;
+  }
+  var d = px.data.data, pos = [], nor = [], uv = [], idx = [];
+  function on(i, j) { return i >= 0 && j >= 0 && i < W && j < H && d[(j * W + i) * 4 + 3] > 20; }
+  function quad(c, n, u, v) {
+    var b = pos.length / 3;
+    for (var k = 0; k < 4; k++) { pos.push(c[k][0], c[k][1], c[k][2]); nor.push(n[0], n[1], n[2]); uv.push(u, v); }
+    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  function quadUV(c, n, u0, v0, u1, v1) {          // BL, BR, TR, TL with an explicit uv rect
+    var b = pos.length / 3, t = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
+    for (var k = 0; k < 4; k++) { pos.push(c[k][0], c[k][1], c[k][2]); nor.push(n[0], n[1], n[2]); uv.push(t[k][0], t[k][1]); }
+    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  var zf = 8.5, zb = 7.5;
+  for (var j = 0; j < H; j++) for (var i = 0; i < W; i++) {
+    if (!on(i, j)) continue;
+    var xa = i * s, xb = (i + 1) * s, yt = 16 - j * s, yb = yt - s;
+    var ua = i / W, ub = (i + 1) / W, vt = 1 - j / H, vb = 1 - (j + 1) / H, uc = (ua + ub) / 2, vc = (vt + vb) / 2;
+    quadUV([[xa,yb,zf],[xb,yb,zf],[xb,yt,zf],[xa,yt,zf]], [0,0,1], ua, vb, ub, vt);          // front
+    quadUV([[xb,yb,zb],[xa,yb,zb],[xa,yt,zb],[xb,yt,zb]], [0,0,-1], ua, vb, ub, vt);         // back (mirrored uv so it reads upright)
+    if (!on(i, j - 1)) quad([[xa,yt,zf],[xb,yt,zf],[xb,yt,zb],[xa,yt,zb]], [0,1,0], uc, vc);
+    if (!on(i, j + 1)) quad([[xa,yb,zb],[xb,yb,zb],[xb,yb,zf],[xa,yb,zf]], [0,-1,0], uc, vc);
+    if (!on(i - 1, j)) quad([[xa,yb,zb],[xa,yb,zf],[xa,yt,zf],[xa,yt,zb]], [-1,0,0], uc, vc);
+    if (!on(i + 1, j)) quad([[xb,yb,zf],[xb,yb,zb],[xb,yt,zb],[xb,yt,zf]], [1,0,0], uc, vc);
+  }
+  var geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5 }));
+}
+const itemTexCache = {};
+function getItemImg(name, tool, hex) {
+  return itemTexCache[name] || (itemTexCache[name] = loadImg(itemUrls(name)).then(function (im) { return im || placeholderTool(tool, hex); }));
+}
+
+/* ---- held-item placement (vanilla hand transform: arm -> hand -> item display transform) ---- */
+const K_FLIP = new THREE.Matrix4().makeScale(1, -1, -1);   // vanilla model space (y down) -> this app (y up)
+function mRot(ax, deg) { var m = new THREE.Matrix4(), a = deg * DEG; return ax === 'x' ? m.makeRotationX(a) : ax === 'y' ? m.makeRotationY(a) : m.makeRotationZ(a); }
+function mTr(x, y, z) { return new THREE.Matrix4().makeTranslation(x, y, z); }
+function handheldMatrix(left) {            // thirdperson_righthand: rotation [0,-90,55], translation [0,4,0.5], scale 0.85 (mirrored for the left hand)
+  var sg = left ? -1 : 1, m = new THREE.Matrix4();
+  m.multiply(mRot('x', -90)).multiply(mRot('y', 180)).multiply(mTr(sg, 2, -10));
+  m.multiply(mTr(0, 4, 0.5)).multiply(mRot('x', 0)).multiply(mRot('y', -90 * sg)).multiply(mRot('z', 55 * sg));
+  m.multiply(new THREE.Matrix4().makeScale(0.85, 0.85, 0.85)).multiply(mTr(-8, -8, -8));
+  return new THREE.Matrix4().copy(K_FLIP).multiply(m);
+}
+
+/* ---- trident & shield (entity models) ---- */
+function buildTrident(tex) {
+  var W = tex.image.width, H = tex.image.height, g = new THREE.Group();
+  var mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.1, side: THREE.DoubleSide });
+  // [u, v, extents (x0,y0,z0,x1,y1,z1), mirror]  y up, tip at +Y
+  [[0, 6, [-0.5, -27, -0.5, 0.5, -2, 0.5]], [4, 0, [-1.5, -2, -0.5, 1.5, 0, 0.5]],
+   [4, 3, [-2.5, -1, -0.5, -1.5, 3, 0.5]], [0, 0, [-0.5, 0, -0.5, 0.5, 4, 0.5]], [4, 3, [1.5, -1, -0.5, 2.5, 3, 0.5], true]
+  ].forEach(function (b) { g.add(new THREE.Mesh(mcBox(b[0], b[1], b[2], 0, !!b[3], W, H), mat)); });
+  return g;
+}
+function buildShield(tex) {
+  var W = tex.image.width, H = tex.image.height, g = new THREE.Group();
+  var mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.1, side: THREE.DoubleSide });
+  var unit = W / 64; g.userData.unit = unit;
+  g.add(new THREE.Mesh(mcBox(0, 0, [-6, -11, 0, 6, 11, 1], 0, false, W * 64 / 64, H * 64 / 64), mat));      // plate, front faces +Z
+  g.add(new THREE.Mesh(mcBox(26, 0, [-1, -3, -6, 1, 3, 0], 0, false, W, H), mat));                           // handle
+  return g;
+}
+function customMatrix(kind, left) {
+  var sg = left ? -1 : 1, m = new THREE.Matrix4();
+  if (kind === 'trident') {
+    m.multiply(mTr(-1 * sg, -10, 2)).multiply(mRot('x', 25)).multiply(mRot('y', 0)).multiply(mTr(0, 12, 0));
+  } else {   // shield: plate in front of the forearm, face pointing forward
+    m.multiply(mTr(2 * sg, -8, 4));
+  }
+  return m;
+}
+
+/* ---- scene objects for equipment ---- */
+PARTS.forEach(function (p) {
+  var o = partObjs[p.key];
+  o.armorGroup = new THREE.Group(); o.group.add(o.armorGroup);
+  o.itemGroup = new THREE.Group(); o.group.add(o.itemGroup);
+  o.extra = [];
+});
+function clearGroup(grp) {
+  while (grp.children.length) {
+    var ch = grp.children.pop();
+    ch.traverse(function (n) { if (n.geometry) n.geometry.dispose(); if (n.material && n.material.dispose && !n.material.userData.keep) n.material.dispose(); });
+  }
+}
+function tagPickable(mesh, partKey) { mesh.userData.part = partKey; partObjs[partKey].extra.push(mesh); }
+
+
+/* ---- enchantment glint (animated like the game, full strength) ---- */
+var GLINT_TIME = { value: 0 };
+function glintTick(t) { if (GLINT_TIME) GLINT_TIME.value = t * 0.5; }
+const glintTexCache = {};
+function getGlint(kind) {
+  return glintTexCache[kind] || (glintTexCache[kind] = loadImg(kind === 'armor'
+    ? ['textures/misc/enchanted_glint_armor.png', 'textures/misc/enchanted_glint_entity.png']
+    : ['textures/misc/enchanted_glint_item.png', 'textures/misc/enchanted_glint.png']).then(function (im) {
+      if (!im) return null;
+      var t = texFrom(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = t.minFilter = THREE.LinearFilter; t.needsUpdate = true; return t;
+    }));
+}
+function addGlint(parent, geo, mask, glintTex, scale, src) {
+  if (!mask || !glintTex) return;
+  var m = new THREE.ShaderMaterial({
+    uniforms: { uMask: { value: mask }, uGlint: { value: glintTex }, uScale: { value: scale }, uTime: GLINT_TIME },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: 'uniform sampler2D uMask, uGlint; uniform float uScale, uTime; varying vec2 vUv;' +
+      'void main(){ if (texture2D(uMask, vUv).a < 0.1) discard;' +
+      ' float f = mod(uTime * 8.0, 110000.0) / 110000.0; float g = mod(uTime * 8.0, 30000.0) / 30000.0;' +
+      ' float c = cos(0.17453293), s = sin(0.17453293); vec2 p = vUv * uScale; p = vec2(c * p.x - s * p.y, s * p.x + c * p.y); p += vec2(-f, g);' +
+      ' gl_FragColor = vec4(texture2D(uGlint, p).rgb, 1.0); }',
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3
+  });
+  var mesh = new THREE.Mesh(geo, m); mesh.renderOrder = 3;
+  if (src) { mesh.matrixAutoUpdate = src.matrixAutoUpdate; mesh.matrix.copy(src.matrix); mesh.position.copy(src.position); mesh.quaternion.copy(src.quaternion); mesh.scale.copy(src.scale); }
+  parent.add(mesh);
+}
+
+var equipToken = 0;
+async function rebuildEquipment() {
+  var token = ++equipToken, e = state.equip, jobs = [];
+  PARTS.forEach(function (p) { var o = partObjs[p.key]; o.extra = []; });
+  var plan = { armor: [], trim: [], hands: [] }, gA = null, gI = null;
+  if (e.glint) { gA = await getGlint('armor'); gI = await getGlint('item'); }
+
+  if (e.armor) {
+    var mat = e.armor;
+    for (var b = 0; b < ARMOR_BOXES.length; b++) {
+      var bx = ARMOR_BOXES[b];
+      var tex = await getArmorTex(mat, bx.layer);
+      var ov = mat === 'leather' ? await getOverlayTex(bx.layer) : null;
+      var trim = e.trim ? await getTrimTex(e.trim, bx.layer, e.color, mat) : null;
+      plan.armor.push({ bx: bx, tex: tex, ov: ov, trim: trim });
+    }
+  }
+  var handsWanted = [['main', 'RightArm', false], ['off', 'LeftArm', true]];
+  for (var h = 0; h < handsWanted.length; h++) {
+    var it = e[handsWanted[h][0]];
+    if (!it) continue;
+    var rec = { part: handsWanted[h][1], left: handsWanted[h][2], it: it };
+    if (it.type === 'trident') rec.tex = texFrom(await loadImg(TRIDENT_URLS) || placeholderPlain(32, 32, 0x2fa8a0));
+    else if (it.type === 'shield') rec.tex = texFrom(await loadImg(SHIELD_URLS) || placeholderPlain(64, 64, 0x8b6a3a));
+    else {
+      var name, hex = 0xdddddd, tool = it.type;
+      if (it.type === 'mace') name = 'mace';
+      else { var tm = TOOL_MATS.filter(function (m2) { return m2.id === it.mat; })[0]; name = tm.item + '_' + it.type; hex = tm.hex; }
+      rec.src = await getItemImg(name, tool, hex); rec.tex = texFrom(rec.src);
+    }
+    plan.hands.push(rec);
+  }
+  if (token !== equipToken) return;                      // a newer request superseded this one
+
+  PARTS.forEach(function (p) { clearGroup(partObjs[p.key].armorGroup); clearGroup(partObjs[p.key].itemGroup); });
+
+  plan.armor.forEach(function (a) {
+    var bx = a.bx, grp = partObjs[bx.part].armorGroup, W = a.tex.image.width, H = a.tex.image.height;
+    var geo = mcBox(bx.u, bx.v, bx.ext, bx.inf, !!bx.mirror, W, H);
+    var m = new THREE.MeshLambertMaterial({ map: a.tex, alphaTest: 0.1, side: THREE.DoubleSide });
+    m.userData.keep = false;
+    if (e.armor === 'leather') m.color.setHex(ARMOR_HEX.leather);
+    var mesh = new THREE.Mesh(geo, m); grp.add(mesh); tagPickable(mesh, bx.part);
+    var glintLater = gA ? function () { addGlint(grp, geo, a.tex, gA, 0.16); } : null;
+    if (a.ov) {
+      var om = new THREE.MeshLambertMaterial({ map: a.ov, alphaTest: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+      var omesh = new THREE.Mesh(geo.clone(), om); grp.add(omesh);
+    }
+    if (a.trim) {
+      var tm2 = new THREE.MeshLambertMaterial({ map: a.trim.tex, color: a.trim.tint, alphaTest: 0.1, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      var tmesh = new THREE.Mesh(geo.clone(), tm2); tmesh.renderOrder = 2; grp.add(tmesh);
+    }
+    if (glintLater) glintLater();
+  });
+
+  plan.hands.forEach(function (r) {
+    var grp = partObjs[r.part].itemGroup, node;
+    if (r.it.type === 'trident') { node = buildTrident(r.tex); node.matrixAutoUpdate = false; node.matrix.copy(customMatrix('trident', r.left)); }
+    else if (r.it.type === 'shield') { node = buildShield(r.tex); node.matrixAutoUpdate = false; node.matrix.copy(customMatrix('shield', r.left)); }
+    else { node = extrudeSprite(r.src, r.tex); node.matrixAutoUpdate = false; node.matrix.copy(handheldMatrix(r.left)); }
+    grp.add(node); node.traverse(function (n) { if (n.isMesh) tagPickable(n, r.part); });
+    if (gI) { var gm = []; node.traverse(function (n) { if (n.isMesh) gm.push(n); }); gm.forEach(function (n) { var par = n.parent || grp; addGlint(par, n.geometry, n.material.map, gI, 8, n); }); }
+  });
+  applyPose();
+  updateTexStatus();
+}
+
+function updateTexStatus() {
+  var names = Object.keys(missingTex).filter(function (u) { return missingTex[u]; });
+  var el = $('#texStatus'); if (!el) return;
+  el.classList.toggle('hidden', !names.length);
+  el.textContent = names.length ? 'Placeholder used for ' + names.length + ' missing texture' + (names.length > 1 ? 's' : '') + ': ' +
+    names.slice(0, 3).map(function (n) { return n.replace(/^textures\//, ''); }).join(', ') + (names.length > 3 ? ', \u2026' : '') : '';
+}
+
+/* ---- equipment UI ---- */
+var activeHand = 'main', toolOpen = null, openDD = null;
+const OPT_CLS = 'rounded-md border px-2 py-1.5 text-left text-sm transition ';
+const IC = 'textures/icons/', BARRIER = IC + 'barrier.png';
+function optCls(sel) { return OPT_CLS + (sel ? 'border-amber-400 bg-amber-400/15 text-amber-200' : 'border-slate-700 text-slate-200 hover:bg-slate-800'); }
+function iconSrc(p) { return (window.TEXDATA && window.TEXDATA[p]) || p; }
+function iconHtml(p) { return '<img src="' + iconSrc(p) + '" alt="" class="h-5 w-5 shrink-0 object-contain" style="image-rendering:pixelated">'; }
+function mkBtn(text, sel, fn, extra, icon) {
+  var b = document.createElement('button');
+  b.className = optCls(sel) + (extra || '') + (icon ? ' flex items-center gap-2' : '');
+  b.innerHTML = (icon ? iconHtml(icon) : '') + '<span class="min-w-0 flex-1">' + text + '</span>';
+  b.addEventListener('click', fn); return b;
+}
+function labelOf(list, id) { var f = list.filter(function (x) { return x.id === id; })[0]; return f ? f.label : null; }
+function toolLabel(it) {
+  if (!it) return 'empty';
+  var t = TOOL_TYPES.filter(function (x) { return x.id === it.type; })[0].label;
+  return (it.mat ? labelOf(TOOL_MATS, it.mat) + ' ' : '') + t;
+}
+function toolIcon(t) { return t.mats ? 'textures/item/iron_' + t.id + '.png' : t.id === 'mace' ? 'textures/item/mace.png' : IC + t.id + '.png'; }
+function setEquip(fn) { fn(state.equip); syncEquipUI(); rebuildEquipment(); }
+
+const DDS = [
+  { id: 'armor', label: 'Armor', icon: IC + 'armor_iron.png', value: function () { return labelOf(ARMOR_MATS, state.equip.armor); }, render: function (p) {
+      var g = document.createElement('div'); g.className = 'grid grid-cols-2 gap-1.5';
+      ARMOR_MATS.forEach(function (m) { g.appendChild(mkBtn(m.label, state.equip.armor === m.id, function () { setEquip(function (e) { e.armor = m.id; }); }, '', IC + 'armor_' + m.id + '.png')); });
+      g.appendChild(mkBtn('No armor', !state.equip.armor, function () { setEquip(function (e) { e.armor = null; }); }, ' text-slate-400', BARRIER));
+      p.appendChild(g);
+      var n = document.createElement('p'); n.className = 'mt-2 text-[11px] text-slate-500'; n.textContent = 'Click a material to put on the full set (helmet, chestplate, leggings, boots).'; p.appendChild(n);
+  } },
+  { id: 'tools', label: 'Tools', icon: 'textures/item/iron_sword.png', value: function () { var e = state.equip, n = (e.main ? 1 : 0) + (e.off ? 1 : 0); return n ? n + ' held' : null; }, render: function (p) {
+      var hands = document.createElement('div'); hands.className = 'mb-2 grid grid-cols-2 gap-1.5';
+      [['main', 'Right hand'], ['off', 'Left hand']].forEach(function (h) {
+        hands.appendChild(mkBtn(h[1] + '<div class="text-[10px] font-normal opacity-70">' + toolLabel(state.equip[h[0]]) + '</div>', activeHand === h[0], function () { activeHand = h[0]; syncEquipUI(); }));
+      });
+      p.appendChild(hands);
+      TOOL_TYPES.forEach(function (t) {
+        var cur = state.equip[activeHand], isCur = cur && cur.type === t.id;
+        if (t.mats) {
+          p.appendChild(mkBtn(t.label + '<span class="float-right opacity-60">' + (toolOpen === t.id ? '\u25BE' : '\u25B8') + '</span>', isCur, function () { toolOpen = toolOpen === t.id ? null : t.id; syncEquipUI(); }, ' mt-1 w-full', toolIcon(t)));
+          if (toolOpen === t.id) {
+            var sub = document.createElement('div'); sub.className = 'mt-1 ml-3 grid grid-cols-2 gap-1.5 border-l border-slate-800 pl-2';
+            TOOL_MATS.forEach(function (m) {
+              sub.appendChild(mkBtn(m.label, isCur && cur.mat === m.id, function () { setEquip(function (e) { e[activeHand] = { type: t.id, mat: m.id }; }); }, '', 'textures/item/' + m.item + '_' + t.id + '.png'));
+            });
+            p.appendChild(sub);
+          }
+        } else {
+          p.appendChild(mkBtn(t.label, isCur, function () {
+            if (t.id === 'shield') activeHand = 'off';
+            setEquip(function (e) { e[activeHand] = { type: t.id }; });
+          }, ' mt-1 w-full', toolIcon(t)));
+        }
+      });
+      p.appendChild(mkBtn('Empty ' + (activeHand === 'main' ? 'right' : 'left') + ' hand', !state.equip[activeHand], function () { setEquip(function (e) { e[activeHand] = null; }); }, ' mt-1 w-full text-slate-400', BARRIER));
+  } },
+  { id: 'trim', label: 'Trim', icon: IC + 'trim_coast.png', value: function () { return labelOf(TRIM_PATTERNS, state.equip.trim); }, render: function (p) {
+      var g = document.createElement('div'); g.className = 'grid grid-cols-2 gap-1.5';
+      TRIM_PATTERNS.forEach(function (t) {
+        g.appendChild(mkBtn(t.label, state.equip.trim === t.id, function () {
+          setEquip(function (e) { e.trim = t.id; });
+          if (!state.equip.armor) toast('Put on an armor set to see the trim');
+        }, '', IC + 'trim_' + t.id + '.png'));
+      });
+      p.appendChild(g);
+      p.appendChild(mkBtn('No trim', !state.equip.trim, function () { setEquip(function (e) { e.trim = null; }); }, ' mt-1.5 w-full text-slate-400', BARRIER));
+      var n = document.createElement('p'); n.className = 'mt-2 text-[11px] text-slate-500'; n.textContent = 'Applied to every armor piece. Pick its color with the Color button.'; p.appendChild(n);
+  } },
+  { id: 'color', label: 'Color', icon: IC + 'color_lapis.png', value: function () { return state.equip.trim ? labelOf(TRIM_COLORS, state.equip.color) : null; }, render: function (p) {
+      var g = document.createElement('div'); g.className = 'grid grid-cols-1 gap-1.5';
+      TRIM_COLORS.forEach(function (c) {
+        g.appendChild(mkBtn(c.label, state.equip.color === c.id, function () { setEquip(function (e) { e.color = c.id; }); }, '', IC + 'color_' + c.id + '.png'));
+      });
+      p.appendChild(g);
+      var n = document.createElement('p'); n.className = 'mt-2 text-[11px] text-slate-500'; n.textContent = 'One trim material at a time, shared by all pieces.'; p.appendChild(n);
+  } }
+];
+DDS.forEach(function (d) {
+  d.btn = document.createElement('button');
+  d.btn.addEventListener('click', function () { openDD = openDD === d.id ? null : d.id; syncEquipUI(); });
+  $('#equipBtns').appendChild(d.btn);
+  d.panel = document.createElement('div'); $('#equipPanels').appendChild(d.panel);
+});
+var enchantBtn = document.createElement('button'), clearBtn = document.createElement('button');
+enchantBtn.addEventListener('click', function () { setEquip(function (e) { e.glint = !e.glint; }); });
+clearBtn.addEventListener('click', function () { toolOpen = null; setEquip(function (e) { e.armor = null; e.trim = null; e.main = null; e.off = null; e.glint = false; }); });
+$('#equipActions').appendChild(enchantBtn); $('#equipActions').appendChild(clearBtn);
+function syncEquipUI() {
+  DDS.forEach(function (d) {
+    var open = openDD === d.id, val = d.value();
+    d.btn.className = 'flex items-center justify-between gap-1 rounded-lg border px-3 py-2 text-sm font-medium transition ' +
+      (open ? 'border-amber-400 bg-amber-400/15 text-amber-200' : 'border-slate-700 text-slate-100 hover:bg-slate-800');
+    d.btn.innerHTML = '<span class="flex min-w-0 items-center gap-2">' + iconHtml(d.icon) + '<span class="truncate">' + d.label + (val ? '<span class="ml-1 text-[11px] font-normal opacity-70">' + val + '</span>' : '') + '</span></span><span class="opacity-60">' + (open ? '\u25B4' : '\u25BE') + '</span>';
+    d.panel.className = open ? 'mt-2 rounded-lg border border-slate-800 bg-slate-950 p-2' : 'hidden';
+    d.panel.innerHTML = '';
+    if (open) d.render(d.panel);
+  });
+  var e = state.equip, parts = [];
+  enchantBtn.className = 'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition ' + (e.glint ? 'border-fuchsia-400 bg-fuchsia-500/20 text-fuchsia-200' : 'border-slate-700 text-slate-100 hover:bg-slate-800');
+  enchantBtn.innerHTML = iconHtml(IC + 'enchanted_book.png') + '<span>Enchant' + (e.glint ? '<span class="ml-1 text-[11px] font-normal opacity-70">on</span>' : '') + '</span>';
+  clearBtn.className = 'flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-100 transition hover:bg-slate-800';
+  clearBtn.innerHTML = iconHtml(BARRIER) + '<span>Clear all</span>';
+  if (e.armor) parts.push(labelOf(ARMOR_MATS, e.armor) + ' armor' + (e.trim ? ' + ' + labelOf(TRIM_PATTERNS, e.trim) + ' trim (' + labelOf(TRIM_COLORS, e.color) + ')' : ''));
+  if (e.main) parts.push('Right: ' + toolLabel(e.main));
+  if (e.off) parts.push('Left: ' + toolLabel(e.off));
+  if (e.glint) parts.push('Enchanted');
+  $('#equipSummary').textContent = parts.join('  \u00B7  ');
+}
+syncEquipUI();
+
+/* ---- inverted mouse ---- */
+var invertStartY = 0, invertOrbit = false;
+viewportEl.addEventListener('pointerdown', function (e) {
+  if (e.button === 0 || e.button === 2) { invertStartY = e.clientY; invertOrbit = !drag; }
+}, false);
+window.addEventListener('pointermove', function (e) {
+  if (!state.invert || e._inv || drag || !invertOrbit || !(e.buttons & 3)) return;
+  e.stopImmediatePropagation();
+  var ev = new PointerEvent('pointermove', { pointerId: e.pointerId, pointerType: e.pointerType, isPrimary: e.isPrimary, bubbles: true, cancelable: true,
+    clientX: e.clientX, clientY: 2 * invertStartY - e.clientY, screenX: e.screenX, screenY: e.screenY, buttons: e.buttons, button: e.button, view: window });
+  ev._inv = true; e.target.dispatchEvent(ev);
+}, true);
+window.addEventListener('pointerup', function () { invertOrbit = false; });
+try { state.invert = localStorage.getItem('armorStandStudio.invert') === '1'; } catch (er) {}
+(function () {
+  var row = document.createElement('label');
+  row.className = 'flex cursor-pointer items-center justify-between gap-3 rounded-lg px-3 py-2 hover:bg-slate-800/60';
+  row.innerHTML = '<span><span class="block text-sm font-medium text-slate-100">Inverted mouse</span><code class="text-[11px] text-slate-400">flips vertical drag (orbit + posing)</code></span>' +
+    '<span class="relative inline-flex"><input type="checkbox" class="peer sr-only" id="invertMouse">' +
+    '<span class="block h-6 w-11 rounded-full bg-slate-600 transition peer-checked:bg-emerald-500 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-300"></span>' +
+    '<span class="pointer-events-none absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5"></span></span>';
+  $('#options').appendChild(row);
+  var cb = row.querySelector('input'); cb.checked = state.invert;
+  cb.addEventListener('change', function () { state.invert = cb.checked; try { localStorage.setItem('armorStandStudio.invert', cb.checked ? '1' : '0'); } catch (er) {} });
+})();
+
+/* ---------------------------------------------------------------------------
+ * Boot
+ * ------------------------------------------------------------------------- */
+window.__AS = { camera: camera, state: state, buildCommand: buildCommand, select: select, applyPreset: applyPreset, partObjs: partObjs };
+select('Head'); changed(); renderPresets();
+document.body.classList.add('ready');
+}   // end start()
+})();
+</script>
+</body>
+</html>
